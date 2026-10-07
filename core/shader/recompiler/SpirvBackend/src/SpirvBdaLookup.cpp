@@ -165,6 +165,7 @@ void DefineGetBdaPointer(SpirvEmitterState& state) {
     if (state.program.Info().bdaWrites) {
         state.bdaWritePointerFunction = DefineBdaLookup(state, "get_bda_write_pointer", true, BdaAbi::Write);
         state.bdaNoteWriteFunction = DefineBdaNoteWrite(state);
+        DefineBdaByteWriteFunctions(state);
     }
 }
 
