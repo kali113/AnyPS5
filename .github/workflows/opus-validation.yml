@@ -1,0 +1,59 @@
+name: Opus library validation
+on:
+  push:
+    branches: [validation/opus-libraries]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  native:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+    defaults:
+      run:
+        shell: bash
+    env:
+      WINLIBS_RELEASE: 15.2.0posix-14.0.0-ucrt-r7
+      WINLIBS_ZIP: winlibs-x86_64-posix-seh-gcc-15.2.0-mingw-w64ucrt-14.0.0-r7.zip
+      SSL_CERT_FILE: C:\Program Files\Git\mingw64\etc\ssl\certs\ca-bundle.crt
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          submodules: true
+      - if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends ninja-build libx11-dev libxext-dev
+      - if: runner.os == 'Windows'
+        id: toolchain
+        uses: actions/cache@v6
+        with:
+          path: C:\winlibs
+          key: ${{ env.WINLIBS_ZIP }}
+      - if: runner.os == 'Windows' && steps.toolchain.outputs.cache-hit != 'true'
+        run: |
+          curl -sSfL -o "$RUNNER_TEMP/winlibs.zip" "https://github.com/brechtsanders/winlibs_mingw/releases/download/$WINLIBS_RELEASE/$WINLIBS_ZIP"
+          7z x "$RUNNER_TEMP/winlibs.zip" -oC:/winlibs > /dev/null
+      - if: runner.os == 'Windows'
+        run: echo 'C:\winlibs\mingw64\bin' >> "$GITHUB_PATH"
+      - if: runner.os == 'Linux'
+        run: echo 'SSL_CERT_FILE=/etc/ssl/certs/ca-certificates.crt' >> "$GITHUB_ENV"
+      - run: cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DBUILD_TESTING=ON -DCMAKE_C_COMPILER=gcc -DCMAKE_CXX_COMPILER=g++
+      - run: python3 tools/check_test_registration.py build
+      - run: cmake --build build --target guest_opus_dec_tests nid_patcher --parallel 3
+      - run: ctest --test-dir build -R '^guest_opus_dec$' --output-on-failure --timeout 30 --repeat until-fail:3
+      - run: |
+          mkdir -p build/opus-patched
+          for module in libSceOpusDec libSceOpusCeltDec; do
+            cp "build/core/libs/libs/unpatched/$module.prx" "build/opus-patched/$module.prx"
+            build/core/libs/nid_patcher "$module" --preserve-exports build/core/libs/libs/unpatched/libc.prx "build/opus-patched/$module.prx"
+          done
+      - uses: actions/upload-artifact@v6
+        if: always()
+        with:
+          name: opus-validation-${{ runner.os }}
+          path: |
+            build/Testing/Temporary/LastTest.log
+            build/opus-patched/
