@@ -11,9 +11,10 @@ namespace Elfpatcher {
 std::vector<std::uint8_t> GuestModuleWriter::WriteLinux(const Relinker::GuestImage& image, const std::vector<std::string>& dependencies, const std::string& runPath) const {
     auto bytes = image.Bytes;
     std::vector<Domain::ProgramHeader> headers;
+    constexpr std::uint32_t gnuStack = 0x6474e551;
     std::uint64_t end = 0;
     for (auto header : image.Headers) {
-        if (header.Type != 1 && header.Type != 7 && header.Type != 0x6474e550 && header.Type != 0x6474e551) continue;
+        if (header.Type != 1 && header.Type != 7 && header.Type != 0x6474e550 && header.Type != gnuStack) continue;
         if (header.Type == 1) {
             end = std::max(end, header.MappedAddress + header.MemorySize);
             if (header.Flags == 0) continue;
@@ -21,6 +22,8 @@ std::vector<std::uint8_t> GuestModuleWriter::WriteLinux(const Relinker::GuestIma
         }
         headers.push_back(header);
     }
+    if (std::none_of(headers.begin(), headers.end(), [&](const auto& header) { return header.Type == gnuStack; }))
+        headers.push_back({gnuStack, 6, 0, 0, 0, 0, 0, 16});
     if (end > std::numeric_limits<std::uint64_t>::max() - 0x4000) throw Domain::RelinkerException("Guest virtual address overflow");
     Io::AlignBuffer(bytes, 0x4000);
     const auto extraOffset = bytes.size();
