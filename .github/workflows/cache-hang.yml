@@ -46,7 +46,7 @@ jobs:
         run: |
           export PATH="$PWD/build/core/libs/libs/unpatched:$PATH"
           python - <<'PYTHON'
-          import subprocess, time, pathlib, shutil
+          import subprocess, time, pathlib, shutil, json
           exe=pathlib.Path('build/tests/agc_shader_disk_cache_tests.exe').resolve()
           for i in range(100):
               print(f'Run {i+1}/100',flush=True)
@@ -57,9 +57,14 @@ jobs:
                       print(pathlib.Path('cache-current.log').read_text(),flush=True)
                       debugger=shutil.which('gdb')
                       if debugger:
-                          with open('cache-backtrace.log','w') as bt:
-                              subprocess.run([debugger,'-batch','-p',str(child.pid),'-ex','thread apply all bt','-ex','detach'],stdout=bt,stderr=subprocess.STDOUT,timeout=30)
-                          print(pathlib.Path('cache-backtrace.log').read_text(),flush=True)
+                          processes=json.loads(subprocess.check_output(['powershell','-NoProfile','-Command','Get-CimInstance Win32_Process | Select-Object ProcessId,ParentProcessId,Name | ConvertTo-Json'],text=True))
+                          pending=[child.pid]
+                          while pending:
+                              pid=pending.pop()
+                              pending.extend(int(p['ProcessId']) for p in processes if int(p['ParentProcessId'])==pid)
+                              with open(f'cache-backtrace-{pid}.log','w') as bt:
+                                  subprocess.run([debugger,'-batch','-p',str(pid),'-ex','thread apply all bt','-ex','detach'],stdout=bt,stderr=subprocess.STDOUT,timeout=30)
+                              print(pathlib.Path(f'cache-backtrace-{pid}.log').read_text(),flush=True)
                       child.kill()
                       raise SystemExit('Shader cache hung')
               if result:
