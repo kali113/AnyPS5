@@ -42,15 +42,15 @@ jobs:
         run: echo 'SSL_CERT_FILE=/etc/ssl/certs/ca-certificates.crt' >> "$GITHUB_ENV"
       - run: cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DBUILD_TESTING=ON -DCMAKE_C_COMPILER=gcc -DCMAKE_CXX_COMPILER=g++
       - run: python3 tools/check_test_registration.py build
-      - run: cmake --build build --target guest_opus_dec_tests nid_patcher --parallel 3
-      - run: ctest --test-dir build -R '^guest_opus_dec$' --output-on-failure --timeout 30 --repeat until-fail:3
+      - run: cmake --build build --target guest_opus_celt_dec_tests nid_patcher --parallel 3
+      - run: ctest --test-dir build -R '^guest_opus_celt_dec$' --output-on-failure --timeout 30 --repeat until-fail:3
       - if: failure() && runner.os == 'Linux'
-        run: gdb -batch -ex run -ex 'thread apply all bt full' --args build/tests/guest_opus_dec_tests
+        run: gdb -batch -ex run -ex 'thread apply all bt full' --args build/tests/guest_opus_celt_dec_tests
       - run: cmake --build build --parallel 3
       - run: cmake --build build --target libs --parallel 3
       - run: |
           mkdir -p build/opus-patched
-          for module in libSceOpusDec libSceOpusCeltDec; do
+          for module in libSceOpusCeltDec; do
             cp "build/core/libs/libs/unpatched/$module.prx" "build/opus-patched/$module.prx"
             build/core/libs/nid_patcher "$module" --preserve-exports build/core/libs/libs/unpatched/libc.prx "build/opus-patched/$module.prx"
           done
