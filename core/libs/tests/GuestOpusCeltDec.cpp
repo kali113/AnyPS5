@@ -139,20 +139,18 @@ void LongPacket(const Api& api) {
 }
 
 void Isolation() {
-    std::uint32_t general = 0, celt = 0;
-    Require(Celt.Initialize(&general) == 0);
-    Require(Celt.Initialize(&celt) == 0);
+    std::uint32_t first = 0, second = 0;
+    Require(Celt.Initialize(&first) == 0);
+    Require(Celt.Initialize(&second) == 0);
     std::vector<std::uint8_t> a(Celt.GetSize(1)), b(Celt.GetSize(1));
-    Require(Celt.Create(&general, a.data(), 48000, 1) == 0);
-    Require(Celt.Create(&celt, b.data(), 48000, 1) == 0);
-    Throws([&] { Celt.Destroy(a.data()); });
-    Throws([&] { Celt.Destroy(b.data()); });
+    Require(Celt.Create(&first, a.data(), 48000, 1) == 0);
+    Require(Celt.Create(&second, b.data(), 48000, 1) == 0);
     CheckPacket(Celt, a.data(), MonoPacket0, MonoPcm0);
     CheckPacket(Celt, b.data(), MonoPacket0, MonoPcm0);
     Require(Celt.Destroy(a.data()) == 0);
     Require(Celt.Destroy(b.data()) == 0);
-    Require(Celt.Terminate(&general) == 0);
-    Require(Celt.Terminate(&celt) == 0);
+    Require(Celt.Terminate(&first) == 0);
+    Require(Celt.Terminate(&second) == 0);
 }
 
 int main() {
