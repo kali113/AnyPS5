@@ -1,0 +1,53 @@
+name: Relinker failure validation
+on:
+  push:
+    branches: [validation/three-failures]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  native-linux:
+    runs-on: ubuntu-latest
+    container: debian:trixie-slim
+    timeout-minutes: 15
+    steps:
+      - name: Install toolchain
+        run: apt-get update && apt-get install -y --no-install-recommends ca-certificates git g++ cmake make python3
+      - uses: actions/checkout@v7
+      - name: Configure isolated relinker targets
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          root = Path.cwd()
+          harness = root / 'validation-harness'
+          harness.mkdir()
+          modules = sorted(p.name + '.prx' for p in (root / 'core/libs/prx').iterdir() if p.is_dir())
+          text = '''cmake_minimum_required(VERSION 3.20)
+          project(RelinkerValidation CXX)
+          set(CMAKE_CXX_STANDARD 20)
+          set(CMAKE_CXX_STANDARD_REQUIRED ON)
+          set(BUILD_TESTING ON)
+          enable_testing()
+          function(configure_windows_unwind target)
+          endfunction()
+          function(add_test_executable target)
+          add_executable(${target} ${ARGN})
+          endfunction()
+          '''
+          text += 'set(ANYPS5_REPLACEMENT_MODULES ' + ' '.join(modules) + ')\n'
+          text += 'add_subdirectory("' + str(root / 'core/relinker') + '" relinker)\n'
+          (harness / 'CMakeLists.txt').write_text(text)
+          PY
+          cmake -S validation-harness -B validation-build -DCMAKE_BUILD_TYPE=Release
+      - name: Build
+        run: cmake --build validation-build -j 4
+      - name: Test on native x86-64 and glibc 2.41
+        run: |
+          uname -m
+          getconf GNU_LIBC_VERSION
+          ctest --test-dir validation-build --output-on-failure --timeout 120
+      - uses: actions/upload-artifact@v6
+        if: always()
+        with:
+          name: relinker-test-logs
+          path: validation-build/Testing/Temporary/
