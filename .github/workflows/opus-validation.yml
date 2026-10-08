@@ -12,7 +12,7 @@ jobs:
       matrix:
         os: [ubuntu-latest, windows-latest]
     runs-on: ${{ matrix.os }}
-    timeout-minutes: 30
+    timeout-minutes: 45
     defaults:
       run:
         shell: bash
@@ -46,6 +46,8 @@ jobs:
       - run: ctest --test-dir build -R '^guest_opus_dec$' --output-on-failure --timeout 30 --repeat until-fail:3
       - if: failure() && runner.os == 'Linux'
         run: gdb -batch -ex run -ex 'thread apply all bt full' --args build/tests/guest_opus_dec_tests
+      - run: cmake --build build --parallel 3
+      - run: cmake --build build --target libs --parallel 3
       - run: |
           mkdir -p build/opus-patched
           for module in libSceOpusDec libSceOpusCeltDec; do
