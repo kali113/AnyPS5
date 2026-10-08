@@ -40,7 +40,7 @@ jobs:
           s=re.sub(r'^(        )(verify\w+\([^;]*;)$', lambda m:m[1]+'std::cerr << "phase: '+m[2].split('(')[0]+'\\n" << std::flush;\n'+m[0],s,flags=re.M)
           p.write_text(s)
           PYTHON
-      - run: cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=RelWithDebInfo -DBUILD_TESTING=ON -DCMAKE_C_COMPILER=gcc -DCMAKE_CXX_COMPILER=g++
+      - run: cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DBUILD_TESTING=ON -DCMAKE_C_COMPILER=gcc -DCMAKE_CXX_COMPILER=g++
       - run: cmake --build build --target agc_shader_disk_cache_tests --parallel 4
       - name: Repeated process runs with hang backtrace
         run: |
@@ -48,8 +48,8 @@ jobs:
           python - <<'PYTHON'
           import subprocess, time, pathlib, shutil, json
           exe=pathlib.Path('build/tests/agc_shader_disk_cache_tests.exe').resolve()
-          for i in range(100):
-              print(f'Run {i+1}/100',flush=True)
+          for i in range(1000):
+              print(f'Run {i+1}/1000',flush=True)
               with open('cache-current.log','w') as log:
                   child=subprocess.Popen([str(exe)],stdout=log,stderr=subprocess.STDOUT)
                   try: result=child.wait(timeout=15)
