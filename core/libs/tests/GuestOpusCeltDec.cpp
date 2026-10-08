@@ -1,5 +1,5 @@
 #include "prx/libc/include/general/VabiMacros.hpp"
-#include "OpusTestData.hpp"
+#include "OpusCeltTestData.hpp"
 #include <algorithm>
 #include <array>
 #include <cmath>
@@ -11,12 +11,6 @@
 #include <vector>
 
 extern "C" {
-int APS5_VABI sceOpusDecInitialize(std::uint32_t*);
-int APS5_VABI sceOpusDecTerminate(std::uint32_t*);
-int APS5_VABI sceOpusDecGetSize(int);
-int APS5_VABI sceOpusDecCreateEx(std::uint32_t*, void*, int, int);
-int APS5_VABI sceOpusDecDecode(void*, const std::uint8_t*, int, std::int16_t*, int);
-int APS5_VABI sceOpusDecDestroy(void*);
 int APS5_VABI sceOpusCeltDecInitialize(std::uint32_t*);
 int APS5_VABI sceOpusCeltDecTerminate(std::uint32_t*);
 int APS5_VABI sceOpusCeltDecGetSize(int);
@@ -39,15 +33,14 @@ template<class T> void Throws(T action) {
 }
 
 struct Api {
-    decltype(&sceOpusDecInitialize) Initialize;
-    decltype(&sceOpusDecTerminate) Terminate;
-    decltype(&sceOpusDecGetSize) GetSize;
-    decltype(&sceOpusDecCreateEx) Create;
-    decltype(&sceOpusDecDecode) Decode;
-    decltype(&sceOpusDecDestroy) Destroy;
+    decltype(&sceOpusCeltDecInitialize) Initialize;
+    decltype(&sceOpusCeltDecTerminate) Terminate;
+    decltype(&sceOpusCeltDecGetSize) GetSize;
+    decltype(&sceOpusCeltDecCreateEx) Create;
+    decltype(&sceOpusCeltDecDecode) Decode;
+    decltype(&sceOpusCeltDecDestroy) Destroy;
 };
 
-constexpr Api General{sceOpusDecInitialize, sceOpusDecTerminate, sceOpusDecGetSize, sceOpusDecCreateEx, sceOpusDecDecode, sceOpusDecDestroy};
 constexpr Api Celt{sceOpusCeltDecInitialize, sceOpusCeltDecTerminate, sceOpusCeltDecGetSize, sceOpusCeltDecCreateEx, sceOpusCeltDecDecode, sceOpusCeltDecDestroy};
 
 template<std::size_t N, std::size_t P>
@@ -64,7 +57,7 @@ void CheckPacket(const Api& api, void* state, const std::uint8_t (&packet)[P], c
     Require(maxError <= 12);
 }
 
-void Test(const Api& api, int channels, bool silk) {
+void Test(const Api& api, int channels) {
     std::uint32_t context = 0;
     Require(api.Initialize(&context) == 0 && context != 0);
     const int size = api.GetSize(channels);
@@ -74,10 +67,7 @@ void Test(const Api& api, int channels, bool silk) {
     Require(api.Create(&context, state, 48000, channels) == 0);
     Throws([&] { api.Create(&context, state, 48000, channels); });
     Throws([&] { api.Terminate(&context); });
-    if (silk) {
-        CheckPacket(api, state, SilkPacket0, SilkPcm0);
-        CheckPacket(api, state, SilkPacket1, SilkPcm1);
-    } else if (channels == 1) {
+    if (channels == 1) {
         CheckPacket(api, state, MonoPacket0, MonoPcm0);
         CheckPacket(api, state, MonoPacket1, MonoPcm1);
     } else {
@@ -120,7 +110,7 @@ void Invalid(const Api& api) {
     const std::uint8_t tooLong[] = {0x83, 63};
     Throws([&] { api.Decode(state.data(), truncated, sizeof(truncated), output.data(), sizeof(output)); });
     Throws([&] { api.Decode(state.data(), tooLong, sizeof(tooLong), output.data(), sizeof(output)); });
-    if (api.Decode == Celt.Decode) Throws([&] { api.Decode(state.data(), SilkPacket0, sizeof(SilkPacket0), output.data(), sizeof(output)); });
+    Throws([&] { api.Decode(state.data(), SilkPacket0, sizeof(SilkPacket0), output.data(), sizeof(output)); });
     Require(std::all_of(output.begin(), output.end(), [](auto x) { return x == 9876; }));
     CheckPacket(api, state.data(), MonoPacket0, MonoPcm0);
     Require(api.Destroy(state.data()) == 0);
@@ -150,30 +140,25 @@ void LongPacket(const Api& api) {
 
 void Isolation() {
     std::uint32_t general = 0, celt = 0;
-    Require(General.Initialize(&general) == 0);
+    Require(Celt.Initialize(&general) == 0);
     Require(Celt.Initialize(&celt) == 0);
-    std::vector<std::uint8_t> a(General.GetSize(1)), b(Celt.GetSize(1));
-    Require(General.Create(&general, a.data(), 48000, 1) == 0);
+    std::vector<std::uint8_t> a(Celt.GetSize(1)), b(Celt.GetSize(1));
+    Require(Celt.Create(&general, a.data(), 48000, 1) == 0);
     Require(Celt.Create(&celt, b.data(), 48000, 1) == 0);
     Throws([&] { Celt.Destroy(a.data()); });
-    Throws([&] { General.Destroy(b.data()); });
-    CheckPacket(General, a.data(), MonoPacket0, MonoPcm0);
+    Throws([&] { Celt.Destroy(b.data()); });
+    CheckPacket(Celt, a.data(), MonoPacket0, MonoPcm0);
     CheckPacket(Celt, b.data(), MonoPacket0, MonoPcm0);
-    Require(General.Destroy(a.data()) == 0);
+    Require(Celt.Destroy(a.data()) == 0);
     Require(Celt.Destroy(b.data()) == 0);
-    Require(General.Terminate(&general) == 0);
+    Require(Celt.Terminate(&general) == 0);
     Require(Celt.Terminate(&celt) == 0);
 }
 
 int main() {
-    Test(General, 1, false);
-    Test(General, 2, false);
-    Test(General, 1, true);
-    Test(Celt, 1, false);
-    Test(Celt, 2, false);
-    Invalid(General);
+    Test(Celt, 1);
+    Test(Celt, 2);
     Invalid(Celt);
-    LongPacket(General);
     LongPacket(Celt);
     Isolation();
 }
