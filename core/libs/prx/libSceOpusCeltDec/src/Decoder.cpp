@@ -1,4 +1,4 @@
-#include "prx/libSceOpusDec/include/Decoder.hpp"
+#include "prx/libSceOpusCeltDec/include/Decoder.hpp"
 #include "prx/libc/include/General.hpp"
 #include <cstring>
 #include <memory>
@@ -23,7 +23,7 @@ std::unordered_map<void*, std::unique_ptr<Decoder>> decoders;
 
 }
 
-namespace OpusDec {
+namespace OpusCeltDec {
 
 int Initialize_nid_no_patch(std::uint32_t* context) {
     if (!context) throw std::invalid_argument("Opus: null context");
@@ -69,10 +69,10 @@ int Create_nid_no_patch(std::uint32_t* context, void* state, int sampleRate, int
     return 0;
 }
 
-int Decode_nid_no_patch(void* state, const std::uint8_t* input, int packetBytes, std::int16_t* pcm, int capacityBytes, bool celtOnly) {
+int Decode_nid_no_patch(void* state, const std::uint8_t* input, int packetBytes, std::int16_t* pcm, int capacityBytes) {
     if (!state || !input || !pcm || packetBytes <= 0 || capacityBytes <= 0)
         throw std::invalid_argument("Opus: invalid decode arguments");
-    if (celtOnly && input[0] < 128) NotImplemented_nid_no_patch("Opus CELT: SILK or hybrid packet");
+    if (input[0] < 128) NotImplemented_nid_no_patch("Opus CELT: SILK or hybrid packet");
     const int samples = opus_packet_get_nb_samples(input, packetBytes, 48000);
     if (samples <= 0 || samples > 5760) throw std::invalid_argument("Opus: invalid packet duration");
     std::lock_guard lock(mutex);
