@@ -40,11 +40,16 @@ jobs:
         run: echo 'C:\winlibs\mingw64\bin' >> "$GITHUB_PATH"
       - if: runner.os == 'Linux'
         run: echo 'SSL_CERT_FILE=/etc/ssl/certs/ca-certificates.crt' >> "$GITHUB_ENV"
-      - run: cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DBUILD_TESTING=ON -DCMAKE_C_COMPILER=gcc -DCMAKE_CXX_COMPILER=g++ -DANYPS5_ENABLE_SPIRV_TOOLS=ON
+      - uses: hendrikmuhs/ccache-action@v1.2.24
+        with:
+          key: ${{ runner.os }}-feature-runtime
+          restore-keys: |
+            ${{ runner.os }}-
+      - run: cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DBUILD_TESTING=ON -DCMAKE_C_COMPILER=gcc -DCMAKE_CXX_COMPILER=g++ -DANYPS5_ENABLE_SPIRV_TOOLS=ON -DCMAKE_C_COMPILER_LAUNCHER=ccache -DCMAKE_CXX_COMPILER_LAUNCHER=ccache
       - run: python3 tools/check_test_registration.py build
       - run: cmake --build build --target agc_driver_flat_apertures_tests agc_driver_gpu_selected_buffer_format_tests --parallel 3
       - name: Probe the largest format groups before the full table
-        run: ctest --test-dir build --output-on-failure --timeout 30 --parallel 4 --repeat until-fail:3 -R '^agc_driver_gpu_selected_buffer_format_(0|1|31)$'
+        run: ctest --test-dir build --output-on-failure --timeout 30 --parallel 4 --repeat until-fail:3 -R '^agc_driver_gpu_selected_buffer_format_(0|1|97)$'
         env:
           ANYPS5_REQUIRE_VULKAN: 1
           GALLIUM_OVERRIDE_CPU_CAPS: avx
