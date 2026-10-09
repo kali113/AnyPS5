@@ -6,6 +6,36 @@
 
 #include "prx/libc/include/general/VabiMacros.hpp"
 
+struct FontMemory;
+
+struct FontGraphicsBackendImport {
+    std::uint32_t Id;
+    std::uint32_t Reserved;
+    void* Value;
+};
+
+struct FontGraphicsBackendImports {
+    std::uint32_t Reserved;
+    std::uint32_t Count;
+    const FontGraphicsBackendImport* Items;
+};
+
+using FontGraphicsBuildBackend = int (APS5_VABI*)(void*, const FontGraphicsBackendImports*);
+using FontGraphicsSelectBackend = void (APS5_VABI*)(void*, FontGraphicsBuildBackend);
+
+struct FontGraphicsServiceDetail {
+    std::uint16_t Tag;
+    std::uint16_t Flags;
+    std::uint32_t Size;
+    std::uintptr_t* SharedContext;
+    std::uint32_t WorkspaceSize;
+    std::uint32_t Reserved;
+    FontGraphicsSelectBackend SelectBackend;
+};
+
+static_assert(sizeof(FontGraphicsServiceDetail) == 32);
+static_assert(offsetof(FontGraphicsServiceDetail, SelectBackend) == 24);
+
 struct FontGraphicsRegion {
     float X;
     float Y;
@@ -57,6 +87,9 @@ static_assert(offsetof(FontGraphicsFillPlot, Region) == 16);
 static_assert(offsetof(FontGraphicsFillPlot, Flags) == 30);
 
 extern "C" {
+int APS5_VABI sceFontCreateGraphicsService(const FontMemory* memory, const FontGraphicsServiceDetail* detail, void** service);
+int APS5_VABI sceFontCreateGraphicsServiceWithEdition(const FontMemory* memory, const FontGraphicsServiceDetail* detail, const void* edition, void** service);
+int APS5_VABI sceFontDestroyGraphicsService(void** service);
 int APS5_VABI sceFontGraphicsRegionInit(FontGraphicsRegion* region, float x, float y, float width, float height);
 int APS5_VABI sceFontGraphicsRegionInitRoundish(FontGraphicsRegion* region, std::uint32_t mode, float x, float y, float width, float height, float outerRadius, float innerRadius);
 int APS5_VABI sceFontGraphicsRegionInitCircular(FontGraphicsRegion* region, float x, float y, float outerRadius, float innerRadius);

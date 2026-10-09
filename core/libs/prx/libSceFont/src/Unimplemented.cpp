@@ -27,16 +27,6 @@ int APS5_VABI sceFontCreateGraphicsDevice() {
     return 0;
 }
 
-int APS5_VABI sceFontCreateGraphicsService() {
-    NotImplemented_nid_no_patch(__func__);
-    return 0;
-}
-
-int APS5_VABI sceFontCreateGraphicsServiceWithEdition() {
-    NotImplemented_nid_no_patch(__func__);
-    return 0;
-}
-
 int APS5_VABI sceFontCreateWords() {
     NotImplemented_nid_no_patch(__func__);
     return 0;
@@ -48,11 +38,6 @@ int APS5_VABI sceFontDefineAttribute() {
 }
 
 int APS5_VABI sceFontDestroyGraphicsDevice() {
-    NotImplemented_nid_no_patch(__func__);
-    return 0;
-}
-
-int APS5_VABI sceFontDestroyGraphicsService() {
     NotImplemented_nid_no_patch(__func__);
     return 0;
 }
