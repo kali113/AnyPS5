@@ -171,7 +171,7 @@ std::vector<std::uint32_t> AtomicKernel(bool structured) {
 
 void Dispatch(AgcDriver::VulkanDevice& device, const std::vector<std::uint32_t>& code, std::uint32_t waveSize, std::array<std::uint32_t, 256>& tableWords, std::array<std::uint32_t, 256>& outputWords) {
     std::vector<std::uint32_t> userData(16u, 0u);
-    const auto table = Descriptor(tableWords.data(), 64u, 0u, 0x31016facu);
+    const auto table = Descriptor(tableWords.data(), static_cast<std::uint32_t>(tableWords.size() * 4u), 0u, 0x31016facu);
     const auto output = Descriptor(outputWords.data(), static_cast<std::uint32_t>(outputWords.size() * 4u), 0u, 0x31016facu);
     std::copy(table.begin(), table.end(), userData.begin());
     std::copy(output.begin(), output.end(), userData.begin() + 12);
@@ -210,7 +210,9 @@ bool RunFormatRow(AgcDriver::VulkanDevice& device, const Row& row, std::uint32_t
     ++Slot;
     output.fill(0xdeadbeefu);
     const auto element = Descriptor(data.data(), row.records, row.stride, row.dstSel | (row.format << 12u) | ((row.idxen ? 0u : 3u) << 28u));
-    std::copy(element.begin(), element.end(), table.begin());
+    for (std::size_t offset = 0; offset < table.size(); offset += element.size()) {
+        std::copy(element.begin(), element.end(), table.begin() + offset);
+    }
     try {
         Dispatch(device, RowKernel(row), waveSize, table, output);
     } catch (const std::exception& error) {
@@ -249,7 +251,9 @@ bool RunAtomicRow(AgcDriver::VulkanDevice& device, std::uint32_t waveSize, Atomi
     for (std::size_t index = 0; index < atomicWords.size(); ++index) atomicWords[index] = 100u + static_cast<std::uint32_t>(index);
     output.fill(0xdeadbeefu);
     const auto element = Descriptor(atomicWords.data(), records, stride, 20u << 12u | ((structured ? 0u : 3u) << 28u));
-    std::copy(element.begin(), element.end(), table.begin());
+    for (std::size_t offset = 0; offset < table.size(); offset += element.size()) {
+        std::copy(element.begin(), element.end(), table.begin() + offset);
+    }
     {
         GuestAllocations::Mutation mutation;
         mutation.Add(atomicWords.data(), atomicWords.size() * 4u, true, true);
