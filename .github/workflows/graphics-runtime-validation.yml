@@ -52,13 +52,24 @@ jobs:
       - name: Four concurrent graphics test processes, three rounds
         run: |
           python3 - <<'PYPROBE'
-          import concurrent.futures, subprocess, time
+          import concurrent.futures, json, os, subprocess, time
           from pathlib import Path
-          exe=str(Path('build/tests/agc_driver_graphics_tests.exe').resolve())
+          catalog=json.loads(subprocess.check_output(['ctest','--test-dir','build','--show-only=json-v1'],text=True))
+          case=next(t for t in catalog['tests'] if t['name']=='agc_driver_graphics')
+          props={p['name']:p['value'] for p in case['properties']}
+          environment=os.environ.copy()
+          for item in props.get('ENVIRONMENT',[]):
+              key,value=item.split('=',1)
+              environment[key]=value
+          for item in props.get('ENVIRONMENT_MODIFICATION',[]):
+              key,change=item.split('=',1)
+              operation,value=change.split(':',1)
+              if operation!='path_list_prepend':raise RuntimeError(operation)
+              environment[key]=value+os.pathsep+environment.get(key,'')
           def probe(i):
               started=time.monotonic()
               try:
-                  r=subprocess.run([exe],capture_output=True,text=True,timeout=30)
+                  r=subprocess.run(case['command'],cwd=props['WORKING_DIRECTORY'],env=environment,capture_output=True,text=True,timeout=30)
               except subprocess.TimeoutExpired as error:
                   print(f'PROCESS {i} TIMED OUT\n{error.stdout}\n{error.stderr}',flush=True)
                   raise
