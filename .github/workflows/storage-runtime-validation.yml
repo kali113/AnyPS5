@@ -1,0 +1,92 @@
+name: Storage cache runtime validation
+on:
+  push:
+    branches: [validation/storage-cache-runtime]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  native:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 45
+    defaults:
+      run:
+        shell: bash
+    env:
+      WINLIBS_RELEASE: 15.2.0posix-14.0.0-ucrt-r7
+      WINLIBS_ZIP: winlibs-x86_64-posix-seh-gcc-15.2.0-mingw-w64ucrt-14.0.0-r7.zip
+      SSL_CERT_FILE: C:\Program Files\Git\mingw64\etc\ssl\certs\ca-bundle.crt
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          submodules: true
+      - if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends ninja-build libx11-dev libxext-dev libvulkan1 mesa-vulkan-drivers
+      - if: runner.os == 'Windows'
+        id: toolchain
+        uses: actions/cache@v6
+        with:
+          path: C:\winlibs
+          key: ${{ env.WINLIBS_ZIP }}
+      - if: runner.os == 'Windows' && steps.toolchain.outputs.cache-hit != 'true'
+        run: |
+          curl -sSfL -o "$RUNNER_TEMP/winlibs.zip" "https://github.com/brechtsanders/winlibs_mingw/releases/download/$WINLIBS_RELEASE/$WINLIBS_ZIP"
+          7z x "$RUNNER_TEMP/winlibs.zip" -oC:/winlibs > /dev/null
+      - if: runner.os == 'Windows'
+        run: echo 'C:\winlibs\mingw64\bin' >> "$GITHUB_PATH"
+      - if: runner.os == 'Linux'
+        run: echo 'SSL_CERT_FILE=/etc/ssl/certs/ca-certificates.crt' >> "$GITHUB_ENV"
+      - run: cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DBUILD_TESTING=ON -DCMAKE_C_COMPILER=gcc -DCMAKE_CXX_COMPILER=g++
+      - run: python3 tools/check_test_registration.py build
+      - run: cmake --build build --parallel 3
+      - run: cmake --build build --target libs --parallel 3
+      - if: runner.os == 'Linux'
+        run: ctest --test-dir build --output-on-failure --timeout 30 --parallel 4 --output-log ctest.log
+        env:
+          ANYPS5_REQUIRE_VULKAN: 1
+          GALLIUM_OVERRIDE_CPU_CAPS: avx
+      - if: runner.os == 'Windows'
+        run: ctest --test-dir build --output-on-failure --timeout 30 --parallel 4 --output-log ctest.log
+      - if: runner.os == 'Linux'
+        name: Cold storage cache repetitions
+        run: |
+          for attempt in 1 2 3; do
+            export MESA_SHADER_CACHE_DIR="$RUNNER_TEMP/storage-cold-$attempt"
+            ctest --test-dir build -R '^agc_driver_storage_cache_budget$' --output-on-failure --timeout 30
+          done
+        env:
+          ANYPS5_REQUIRE_VULKAN: 1
+          GALLIUM_OVERRIDE_CPU_CAPS: avx
+      - if: runner.os == 'Linux'
+        name: Negative control ignores the configured storage budget
+        run: |
+          python3 - <<'PYCONTROL'
+          from pathlib import Path
+          p=Path('core/libs/prx/libSceAgcDriver/Graphics/src/ShaderResources.cpp')
+          s=p.read_text().replace('return forced != 0 ? forced : TextureCacheBudget(context.memory);', 'return TextureCacheBudget(context.memory);')
+          p.write_text(s)
+          PYCONTROL
+          cmake --build build --target agc_driver_storage_cache_budget_tests --parallel 3
+          export MESA_SHADER_CACHE_DIR="$RUNNER_TEMP/storage-negative"
+          if ctest --test-dir build -R '^agc_driver_storage_cache_budget$' --output-on-failure --timeout 30; then
+            echo 'Negative control unexpectedly passed'
+            exit 1
+          fi
+          if ! grep -q 'is still cached' build/Testing/Temporary/LastTest.log; then
+            echo 'Negative control failed for an unexpected reason'
+            exit 1
+          fi
+        env:
+          ANYPS5_REQUIRE_VULKAN: 1
+          GALLIUM_OVERRIDE_CPU_CAPS: avx
+      - uses: actions/upload-artifact@v6
+        if: always()
+        with:
+          name: storage-runtime-${{ runner.os }}
+          path: |
+            ctest.log
+            build/Testing/Temporary/LastTest.log
