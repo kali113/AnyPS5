@@ -1,7 +1,7 @@
-name: Foreign integration full build
+name: Foreign integration library packaging
 on:
   push:
-    branches: [validation/feature-test-runtime]
+    branches: [validation/feature-library-packaging]
   workflow_dispatch:
 permissions:
   contents: read
@@ -48,4 +48,4 @@ jobs:
           save: true
       - run: cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DBUILD_TESTING=ON -DCMAKE_C_COMPILER=gcc -DCMAKE_CXX_COMPILER=g++ -DCMAKE_C_COMPILER_LAUNCHER=ccache -DCMAKE_CXX_COMPILER_LAUNCHER=ccache -DANYPS5_ENABLE_SPIRV_TOOLS=${{ runner.os == 'Linux' && 'ON' || 'OFF' }}
       - run: python3 tools/check_test_registration.py build
-      - run: cmake --build build --parallel 3
+      - run: cmake --build build --target libs --parallel 3
