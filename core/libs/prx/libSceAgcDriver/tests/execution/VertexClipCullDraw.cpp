@@ -3,6 +3,7 @@
 #include "prx/libSceAgcDriver/Graphics/include/Draw.hpp"
 #include "prx/libSceAgcDriver/Submit/include/Dcb.hpp"
 #include "prx/libc/include/GuestArena.hpp"
+#include "VulkanTestDevice.hpp"
 #include "prx/libc/include/GuestWriteWatch.hpp"
 #ifdef _WIN32
 #ifndef NOMINMAX
@@ -192,6 +193,7 @@ int main(int argc, char** argv) {
     try {
         const bool noKey = argc > 1 && std::string(argv[1]) == "no-key";
         if (noKey) Require(std::getenv("APS5_NO_DRAW_KEY") != nullptr, "the no-key run must start with APS5_NO_DRAW_KEY set");
+        if (!OpenVulkanTestDevice()) return VulkanTestSkipped;
         ColorMemory = AllocateWatched(2 * Block);
         Register(VertexShader, VertexCode.data(), sizeof(VertexCode), 2);
         Register(PixelShader, PixelCode.data(), sizeof(PixelCode), 1);
