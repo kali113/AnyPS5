@@ -1,4 +1,5 @@
 #include "BdaTests.hpp"
+#include <chrono>
 #include "GraphicsTests.hpp"
 #include "prx/libSceAgcDriver/Graphics/include/Pipeline.hpp"
 #include "prx/libSceAgcDriver/Graphics/include/TextureDetiler.hpp"
@@ -2718,6 +2719,11 @@ int main() {
 #else
     setenv("APS5_PIN_WAIT_MS", "200", 1);
 #endif
+    auto timed = [](auto action, const char* name) {
+        const auto start = std::chrono::steady_clock::now();
+        timed([&] { action(); }, "action");
+        std::cout << name << ": " << std::chrono::duration<double>(std::chrono::steady_clock::now() - start).count() << " s" << std::endl;
+    };
     try {
         {
             const AgcDriver::Graphics::Context context{};
@@ -2749,39 +2755,39 @@ int main() {
             unrestricted.depthRangeUnrestricted = true;
             AgcDriver::Graphics::ValidateDepthBounds(unrestricted, bounded);
         }
-        RunGuestLeaseWaitTests();
-        stateTests();
-        depthMaintenanceTests();
-        hardwareScreenOffsetTests();
-        srgb8TargetTests();
-        DepthClipTests();
-        DepthStencilTests();
-        ZExportTests();
-        DepthBoundsBiasTests();
-        conservativeZExportTests();
-        orderedPixelShaderTests();
-        ConservativeRasterizationTests();
-        DisabledColorTests();
-        CompactedExportTests();
-        ReversedComponentOrderTests();
-        metadataPassTests();
-        cmaskTests();
-        ShaderStageTests();
-        TuningFieldTests();
-        PixelInputLayoutTests();
-        ComputeScratchTests();
-        InitialContextTests();
-        pushConstantTests();
-        resourceTests();
-        descriptorCacheTests();
-        misalignedShaderDataTests();
-        debugBranchTests();
-        meshArgumentTests();
-        meshIndexBufferTests();
-        validationTests();
-        vertexCopyTests();
-        pixelParameterSlotTests();
-        rectListTests();
+        timed([&] { RunGuestLeaseWaitTests(); }, "RunGuestLeaseWaitTests");
+        timed([&] { stateTests(); }, "stateTests");
+        timed([&] { depthMaintenanceTests(); }, "depthMaintenanceTests");
+        timed([&] { hardwareScreenOffsetTests(); }, "hardwareScreenOffsetTests");
+        timed([&] { srgb8TargetTests(); }, "srgb8TargetTests");
+        timed([&] { DepthClipTests(); }, "DepthClipTests");
+        timed([&] { DepthStencilTests(); }, "DepthStencilTests");
+        timed([&] { ZExportTests(); }, "ZExportTests");
+        timed([&] { DepthBoundsBiasTests(); }, "DepthBoundsBiasTests");
+        timed([&] { conservativeZExportTests(); }, "conservativeZExportTests");
+        timed([&] { orderedPixelShaderTests(); }, "orderedPixelShaderTests");
+        timed([&] { ConservativeRasterizationTests(); }, "ConservativeRasterizationTests");
+        timed([&] { DisabledColorTests(); }, "DisabledColorTests");
+        timed([&] { CompactedExportTests(); }, "CompactedExportTests");
+        timed([&] { ReversedComponentOrderTests(); }, "ReversedComponentOrderTests");
+        timed([&] { metadataPassTests(); }, "metadataPassTests");
+        timed([&] { cmaskTests(); }, "cmaskTests");
+        timed([&] { ShaderStageTests(); }, "ShaderStageTests");
+        timed([&] { TuningFieldTests(); }, "TuningFieldTests");
+        timed([&] { PixelInputLayoutTests(); }, "PixelInputLayoutTests");
+        timed([&] { ComputeScratchTests(); }, "ComputeScratchTests");
+        timed([&] { InitialContextTests(); }, "InitialContextTests");
+        timed([&] { pushConstantTests(); }, "pushConstantTests");
+        timed([&] { resourceTests(); }, "resourceTests");
+        timed([&] { descriptorCacheTests(); }, "descriptorCacheTests");
+        timed([&] { misalignedShaderDataTests(); }, "misalignedShaderDataTests");
+        timed([&] { debugBranchTests(); }, "debugBranchTests");
+        timed([&] { meshArgumentTests(); }, "meshArgumentTests");
+        timed([&] { meshIndexBufferTests(); }, "meshIndexBufferTests");
+        timed([&] { validationTests(); }, "validationTests");
+        timed([&] { vertexCopyTests(); }, "vertexCopyTests");
+        timed([&] { pixelParameterSlotTests(); }, "pixelParameterSlotTests");
+        timed([&] { rectListTests(); }, "rectListTests");
         mock = MockVulkan{};
         auto bdaContext = mockContext();
         bdaContext.bufferDeviceAddress = true;
@@ -2801,14 +2807,14 @@ int main() {
             }
         });
         Require(mock.live == 0, "BDA resources leaked Vulkan objects");
-        RunGuestAllocationTests();
-        RunUnmappedGapTests();
-        RunColorTargetLayoutTests();
-        RunLiveStackAccessTests();
-        RunTextureFormatTests();
-        RunTextureTilingTests();
-        RunGuestTextureResourceTests();
-        RunGuestSamplerResourceTests();
+        timed([&] { RunGuestAllocationTests(); }, "RunGuestAllocationTests");
+        timed([&] { RunUnmappedGapTests(); }, "RunUnmappedGapTests");
+        timed([&] { RunColorTargetLayoutTests(); }, "RunColorTargetLayoutTests");
+        timed([&] { RunLiveStackAccessTests(); }, "RunLiveStackAccessTests");
+        timed([&] { RunTextureFormatTests(); }, "RunTextureFormatTests");
+        timed([&] { RunTextureTilingTests(); }, "RunTextureTilingTests");
+        timed([&] { RunGuestTextureResourceTests(); }, "RunGuestTextureResourceTests");
+        timed([&] { RunGuestSamplerResourceTests(); }, "RunGuestSamplerResourceTests");
         mock = MockVulkan{};
         auto textureDetilerContext = mockContext();
         textureDetilerContext.limits.minStorageBufferOffsetAlignment = 16;
