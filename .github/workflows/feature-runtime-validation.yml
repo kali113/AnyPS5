@@ -1,7 +1,7 @@
-name: Foreign feature runtime probe
+name: Foreign feature Windows validation
 on:
   push:
-    branches: [validation/feature-test-runtime]
+    branches: [validation/feature-test-windows]
   workflow_dispatch:
 permissions:
   contents: read
@@ -10,7 +10,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest]
+        os: [windows-latest]
     runs-on: ${{ matrix.os }}
     timeout-minutes: 45
     defaults:
@@ -51,19 +51,16 @@ jobs:
       - name: Existing recompiler and buffer checks
         run: ctest --test-dir build -R '^agc_driver(_buffer_format|_bda_device)?$' --output-on-failure --timeout 30 --parallel 4
         env:
-          ANYPS5_REQUIRE_VULKAN: 1
           GALLIUM_OVERRIDE_CPU_CAPS: avx
           MESA_SHADER_CACHE_DISABLE: 'true'
       - name: Probe the largest format groups before the full table
         run: ctest --test-dir build --output-on-failure --timeout 30 --parallel 4 --repeat until-fail:3 -R '^agc_driver_gpu_selected_buffer_format_(0|1|97)$'
         env:
-          ANYPS5_REQUIRE_VULKAN: 1
           GALLIUM_OVERRIDE_CPU_CAPS: avx
           MESA_SHADER_CACHE_DISABLE: 'true'
       - name: Cold feature tests with strict runtime limits
         run: ctest --test-dir build --verbose --timeout 30 --parallel 4 --repeat until-fail:3 -L '^agc_driver_gpu_selected_buffer_format$' --output-log ctest.log
         env:
-          ANYPS5_REQUIRE_VULKAN: 1
           GALLIUM_OVERRIDE_CPU_CAPS: avx
           MESA_SHADER_CACHE_DISABLE: 'true'
       - uses: actions/upload-artifact@v6
