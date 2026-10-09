@@ -143,62 +143,7 @@ int APS5_VABI sceFontGraphicsExchangeResource() {
     return 0;
 }
 
-int APS5_VABI sceFontGraphicsFillMethodInit() {
-    NotImplemented_nid_no_patch(__func__);
-    return 0;
-}
-
-int APS5_VABI sceFontGraphicsFillPlotInit() {
-    NotImplemented_nid_no_patch(__func__);
-    return 0;
-}
-
-int APS5_VABI sceFontGraphicsFillPlotSetLayout() {
-    NotImplemented_nid_no_patch(__func__);
-    return 0;
-}
-
-int APS5_VABI sceFontGraphicsFillPlotSetMapping() {
-    NotImplemented_nid_no_patch(__func__);
-    return 0;
-}
-
-int APS5_VABI sceFontGraphicsFillRatesInit() {
-    NotImplemented_nid_no_patch(__func__);
-    return 0;
-}
-
-int APS5_VABI sceFontGraphicsFillRatesSetFillEffect() {
-    NotImplemented_nid_no_patch(__func__);
-    return 0;
-}
-
-int APS5_VABI sceFontGraphicsFillRatesSetLayout() {
-    NotImplemented_nid_no_patch(__func__);
-    return 0;
-}
-
-int APS5_VABI sceFontGraphicsFillRatesSetMapping() {
-    NotImplemented_nid_no_patch(__func__);
-    return 0;
-}
-
 int APS5_VABI sceFontGraphicsGetDeviceUsage() {
-    NotImplemented_nid_no_patch(__func__);
-    return 0;
-}
-
-int APS5_VABI sceFontGraphicsRegionInit() {
-    NotImplemented_nid_no_patch(__func__);
-    return 0;
-}
-
-int APS5_VABI sceFontGraphicsRegionInitCircular() {
-    NotImplemented_nid_no_patch(__func__);
-    return 0;
-}
-
-int APS5_VABI sceFontGraphicsRegionInitRoundish() {
     NotImplemented_nid_no_patch(__func__);
     return 0;
 }
