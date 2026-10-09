@@ -57,7 +57,11 @@ jobs:
           exe=str(Path('build/tests/agc_driver_graphics_tests.exe').resolve())
           def probe(i):
               started=time.monotonic()
-              r=subprocess.run([exe],capture_output=True,text=True,timeout=30)
+              try:
+                  r=subprocess.run([exe],capture_output=True,text=True,timeout=30)
+              except subprocess.TimeoutExpired as error:
+                  print(f'PROCESS {i} TIMED OUT\n{error.stdout}\n{error.stderr}',flush=True)
+                  raise
               print(f'PROCESS {i} seconds={time.monotonic()-started:.3f} exit={r.returncode}\n{r.stdout}\n{r.stderr}',flush=True)
               if r.returncode:raise RuntimeError(f'process {i} failed')
           with concurrent.futures.ThreadPoolExecutor(max_workers=4) as pool:

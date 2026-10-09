@@ -2721,7 +2721,7 @@ int main() {
 #endif
     auto timed = [](auto action, const char* name) {
         const auto start = std::chrono::steady_clock::now();
-        timed([&] { action(); }, "action");
+        action();
         std::cout << name << ": " << std::chrono::duration<double>(std::chrono::steady_clock::now() - start).count() << " s" << std::endl;
     };
     try {
