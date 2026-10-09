@@ -10,7 +10,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest]
+        os: [ubuntu-latest, windows-latest]
     runs-on: ${{ matrix.os }}
     timeout-minutes: 45
     defaults:
@@ -45,8 +45,8 @@ jobs:
           key: ${{ runner.os }}-store-runtime
           restore-keys: |
             ${{ runner.os }}-
-          save: false
-      - run: cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DBUILD_TESTING=ON -DCMAKE_C_COMPILER=gcc -DCMAKE_CXX_COMPILER=g++ -DCMAKE_C_COMPILER_LAUNCHER=ccache -DCMAKE_CXX_COMPILER_LAUNCHER=ccache -DANYPS5_ENABLE_SPIRV_TOOLS=ON
+          save: true
+      - run: cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DBUILD_TESTING=ON -DCMAKE_C_COMPILER=gcc -DCMAKE_CXX_COMPILER=g++ -DCMAKE_C_COMPILER_LAUNCHER=ccache -DCMAKE_CXX_COMPILER_LAUNCHER=ccache -DANYPS5_ENABLE_SPIRV_TOOLS=${{ runner.os == 'Linux' && 'ON' || 'OFF' }}
       - run: python3 tools/check_test_registration.py build
       - run: cmake --build build --target agc_driver_flat_store_tests agc_driver_global_vcc_base_tests --parallel 3
       - name: Exercise the primary case under parallel contention too
@@ -64,6 +64,9 @@ jobs:
           ANYPS5_REQUIRE_VULKAN: 1
           GALLIUM_OVERRIDE_CPU_CAPS: avx
           MESA_SHADER_CACHE_DISABLE: 'true'
+      - if: runner.os == 'Windows'
+        name: Windows registered modes and capability checks
+        run: ctest --test-dir build -L '^agc_driver_(flat_store|global_vcc_base)$' --output-on-failure --timeout 30 --parallel 4 --output-log cold-store.log
       - uses: actions/upload-artifact@v6
         if: always()
         with:
