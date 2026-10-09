@@ -8,6 +8,7 @@
 #include <array>
 #include <cstdint>
 #include <cstdio>
+#include <cstdlib>
 #include <iostream>
 #include <memory>
 #include <span>
@@ -21,13 +22,14 @@ using AgcDriver::Graphics::Require;
 using AgcDriver::Graphics::StorageTexture;
 using ShaderRecompiler::ShaderStage;
 
-constexpr std::uint32_t Side = 4096;
+constexpr std::uint32_t Side = 512;
 constexpr std::uint32_t Format32UInt = 20;
 constexpr std::uint32_t TileR64KBX = 0x1b;
 constexpr std::uint32_t Type2D = 9;
 constexpr std::uint64_t SurfaceBytes = std::uint64_t{Side} * Side * 4u;
 constexpr std::uint64_t Stride = 0x10000;
-constexpr std::uint64_t FixedBudget = 2048ull << 20u;
+constexpr std::uint64_t FixedBudget = 16ull << 20u;
+constexpr std::uint64_t TestBudget = 32ull << 20u;
 constexpr std::uint64_t EvictionLimit = 4ull << 30u;
 constexpr std::uint32_t MaxSurfaces = 80;
 
@@ -152,10 +154,15 @@ std::shared_ptr<StorageTexture> Load(AgcDriver::VulkanDevice& device, std::uint6
 
 int main() {
     try {
+#ifdef _WIN32
+        Require(_putenv_s("APS5_TEXTURE_CACHE_MIB", "32") == 0, "cannot set the test cache budget");
+#else
+        Require(setenv("APS5_TEXTURE_CACHE_MIB", "32", 1) == 0, "cannot set the test cache budget");
+#endif
         const auto device = OpenVulkanTestDevice();
         if (!device) return VulkanTestSkipped;
         const auto selected = SelectDevice();
-        const auto budget = AgcDriver::Graphics::TextureCacheBudget(selected.memory);
+        const auto budget = TestBudget;
         std::vector<std::uint32_t> storage((SurfaceBytes + MaxSurfaces * Stride + Stride) / 4u, 0u);
         auto* texels = reinterpret_cast<std::uint32_t*>((reinterpret_cast<std::uintptr_t>(storage.data()) + Stride - 1u) & ~std::uintptr_t{Stride - 1u});
         for (std::uint32_t surface = 0; surface < MaxSurfaces; ++surface) texels[surface * Stride / 4u] = Marker(surface);
@@ -175,7 +182,7 @@ int main() {
             Require(first != nullptr, "surface 0 has no cached storage image");
             const auto held = std::max<std::uint64_t>(first->AllocationBytes(), first->GuestBytes());
             const auto reused = static_cast<std::uint32_t>(FixedBudget / held) + 1u;
-            std::printf("texture cache budget %llu MiB; each 4096x4096 32_UINT surface holds %llu MiB; cyclic set of %u surfaces (%llu MiB)\n", static_cast<unsigned long long>(budget >> 20u), static_cast<unsigned long long>(held >> 20u), reused, static_cast<unsigned long long>((reused * held) >> 20u));
+            std::printf("texture cache budget %llu MiB; each 512x512 32_UINT surface holds %llu MiB; cyclic set of %u surfaces (%llu MiB)\n", static_cast<unsigned long long>(budget >> 20u), static_cast<unsigned long long>(held >> 20u), reused, static_cast<unsigned long long>((reused * held) >> 20u));
             if (budget < reused * held) {
                 std::printf("skipped, the device-local heap gives the texture caches less than the cyclic set\n");
                 release();
