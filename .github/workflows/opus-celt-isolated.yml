@@ -1,0 +1,75 @@
+name: Isolated CELT decoder validation
+on:
+  push:
+    branches: [validation/opus-celt-isolated]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  native:
+    name: ${{ matrix.contribution.topic }} (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+        contribution:
+          - {"topic": "opus-celt", "source": "e3b8ae7511a17ea3c4f4d1e47e60f94ed3e887ae", "tests": "^guest_opus_celt_dec$"}
+
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 45
+    defaults:
+      run:
+        shell: bash
+    env:
+      WINLIBS_RELEASE: 15.2.0posix-14.0.0-ucrt-r7
+      WINLIBS_ZIP: winlibs-x86_64-posix-seh-gcc-15.2.0-mingw-w64ucrt-14.0.0-r7.zip
+      SSL_CERT_FILE: C:\Program Files\Git\mingw64\etc\ssl\certs\ca-bundle.crt
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          submodules: true
+          fetch-depth: 2
+          ref: ${{ matrix.contribution.source }}
+      - if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends ninja-build libx11-dev libxext-dev libvulkan1 mesa-vulkan-drivers
+      - if: runner.os == 'Windows'
+        id: toolchain
+        uses: actions/cache@v6
+        with:
+          path: C:\winlibs
+          key: ${{ env.WINLIBS_ZIP }}
+      - if: runner.os == 'Windows' && steps.toolchain.outputs.cache-hit != 'true'
+        run: |
+          curl -sSfL -o "$RUNNER_TEMP/winlibs.zip" "https://github.com/brechtsanders/winlibs_mingw/releases/download/$WINLIBS_RELEASE/$WINLIBS_ZIP"
+          7z x "$RUNNER_TEMP/winlibs.zip" -oC:/winlibs > /dev/null
+      - if: runner.os == 'Windows'
+        run: echo 'C:\winlibs\mingw64\bin' >> "$GITHUB_PATH"
+      - if: runner.os == 'Linux'
+        run: echo 'SSL_CERT_FILE=/etc/ssl/certs/ca-certificates.crt' >> "$GITHUB_ENV"
+      - uses: hendrikmuhs/ccache-action@v1.2.24
+        with:
+          key: ${{ runner.os }}-font-graphics-runtime
+          restore-keys: |
+            ${{ runner.os }}-
+          save: true
+      - run: cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DBUILD_TESTING=ON -DCMAKE_C_COMPILER=gcc -DCMAKE_CXX_COMPILER=g++ -DCMAKE_C_COMPILER_LAUNCHER=ccache -DCMAKE_CXX_COMPILER_LAUNCHER=ccache -DANYPS5_ENABLE_SPIRV_TOOLS=${{ runner.os == 'Linux' && 'ON' || 'OFF' }}
+      - run: python3 tools/check_conventions.py --base d70b89989473ba1f6ae13e44e079e67f1f8a44b0
+      - run: python3 tools/check_test_registration.py build
+      - run: cmake --build build --parallel 3
+      - run: cmake --build build --target libs --parallel 3
+      - name: Relevant cold runtime tests
+        run: |
+          if [ "$RUNNER_OS" = Linux ]; then export ANYPS5_REQUIRE_VULKAN=1; fi
+          for attempt in 1 2 3; do
+            export MESA_SHADER_CACHE_DIR="$RUNNER_TEMP/cold-$attempt"
+            ctest --test-dir build --output-on-failure --parallel 4 --timeout 30 -R '${{ matrix.contribution.tests }}' --output-junit "$RUNNER_TEMP/results-$attempt.xml"
+          done
+        env:
+          GALLIUM_OVERRIDE_CPU_CAPS: avx
+      - uses: actions/upload-artifact@v6
+        if: always()
+        with:
+          name: isolated-${{ matrix.contribution.topic }}-${{ runner.os }}
+          path: |
+            ${{ runner.temp }}/results-*.xml
+            build/Testing/Temporary/LastTest.log
