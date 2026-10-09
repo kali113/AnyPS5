@@ -110,8 +110,6 @@ bool ValidMemory(const FontMemory* memory) {
 
 }
 
-#pragma GCC visibility push(default)
-
 extern "C" {
 
 int APS5_VABI sceFontCreateGraphicsService(const FontMemory* memory, const FontGraphicsServiceDetail* detail, void** service) {
@@ -195,4 +193,3 @@ int APS5_VABI sceFontDestroyGraphicsService(void** service) {
 
 }
 
-#pragma GCC visibility pop

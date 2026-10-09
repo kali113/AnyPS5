@@ -36,6 +36,43 @@ struct FontGraphicsServiceDetail {
 static_assert(sizeof(FontGraphicsServiceDetail) == 32);
 static_assert(offsetof(FontGraphicsServiceDetail, SelectBackend) == 24);
 
+struct FontGraphicsDeviceDetail {
+    std::uint16_t Tag;
+    std::uint16_t Flags;
+    std::uint32_t Reserved;
+    void* Service;
+    void* Commands;
+    std::uint32_t CommandSize;
+    std::uint32_t InitialCommandSize;
+    void* Textures;
+    std::uint32_t TextureSize;
+    std::uint32_t InitialTextureSize;
+};
+
+static_assert(sizeof(FontGraphicsDeviceDetail) == 48);
+static_assert(offsetof(FontGraphicsDeviceDetail, Textures) == 32);
+
+struct FontGraphicsPoolUsage {
+    std::uint32_t Size;
+    std::uint32_t Used;
+    std::uint32_t Available;
+    std::uint32_t Peak;
+    std::int32_t Change;
+};
+
+struct FontGraphicsBufferUsage {
+    FontGraphicsPoolUsage Main;
+    FontGraphicsPoolUsage Pool;
+    void* Address;
+};
+
+struct FontGraphicsDeviceUsage {
+    FontGraphicsBufferUsage Commands;
+    FontGraphicsBufferUsage Textures;
+};
+
+static_assert(sizeof(FontGraphicsDeviceUsage) == 96);
+
 struct FontGraphicsRegion {
     float X;
     float Y;
@@ -87,6 +124,12 @@ static_assert(offsetof(FontGraphicsFillPlot, Region) == 16);
 static_assert(offsetof(FontGraphicsFillPlot, Flags) == 30);
 
 extern "C" {
+int APS5_VABI sceFontGraphicsStructureDesign(void* device, std::uint32_t mode, void** design);
+int APS5_VABI sceFontGraphicsDesignStartDrawing(void* design, void* device, void** drawing, void** handle);
+int APS5_VABI sceFontGraphicsDrawingCancel(void** drawing);
+int APS5_VABI sceFontCreateGraphicsDevice(const FontMemory* memory, const FontGraphicsDeviceDetail* detail, void** device);
+int APS5_VABI sceFontDestroyGraphicsDevice(void** device);
+int APS5_VABI sceFontGraphicsGetDeviceUsage(void* device, FontGraphicsDeviceUsage* usage);
 int APS5_VABI sceFontCreateGraphicsService(const FontMemory* memory, const FontGraphicsServiceDetail* detail, void** service);
 int APS5_VABI sceFontCreateGraphicsServiceWithEdition(const FontMemory* memory, const FontGraphicsServiceDetail* detail, const void* edition, void** service);
 int APS5_VABI sceFontDestroyGraphicsService(void** service);

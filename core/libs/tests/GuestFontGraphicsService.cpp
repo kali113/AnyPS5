@@ -159,6 +159,77 @@ void CheckExceptions() {
     Require(sceFontDestroyGraphicsService(&service) == 0 && !service && !shared && allocations == 0);
 }
 
+void CheckDevices() {
+    FontMemoryInterface interface{Allocate, Deallocate, nullptr, nullptr, nullptr, nullptr};
+    auto memory = MakeMemory(&interface);
+    std::uintptr_t shared = 0;
+    const FontGraphicsServiceDetail serviceDetail{0xE08, 0, 256, &shared, 65536, 0, Select};
+    void* service = nullptr;
+    Require(sceFontCreateGraphicsService(&memory, &serviceDetail, &service) == 0);
+    FontGraphicsDeviceDetail detail{0xFD6, 0, 0, service, nullptr, 65536, 32768, nullptr, 65536, 32768};
+    void* device = reinterpret_cast<void*>(1);
+    Require(sceFontCreateGraphicsDevice(nullptr, &detail, &device) == SCE_FONT_ERROR_INVALID_PARAMETER && !device);
+    memory.mem_kind = 0;
+    Require(sceFontCreateGraphicsDevice(&memory, &detail, &device) == SCE_FONT_ERROR_INVALID_MEMORY && !device);
+    memory.mem_kind = 0xF00;
+    Require(sceFontCreateGraphicsDevice(&memory, &detail, nullptr) == SCE_FONT_ERROR_INVALID_PARAMETER);
+    for (int invalid = 0; invalid < 9; ++invalid) {
+        auto altered = detail;
+        switch (invalid) {
+            case 0: altered.Tag = 0; break;
+            case 1: altered.Flags = 1; break;
+            case 2: altered.Reserved = 1; break;
+            case 3: altered.Service = nullptr; break;
+            case 4: altered.Commands = reinterpret_cast<void*>(1); break;
+            case 5: altered.CommandSize = 65535; break;
+            case 6: altered.TextureSize = 0x40000001; break;
+            case 7: altered.InitialCommandSize = 0; break;
+            case 8: altered.InitialTextureSize = 1; break;
+        }
+        Require(sceFontCreateGraphicsDevice(&memory, &altered, &device) == SCE_FONT_ERROR_INVALID_PARAMETER && !device && allocations == 1);
+    }
+    detail.InitialCommandSize = 66048;
+    Require(sceFontCreateGraphicsDevice(&memory, &detail, &device) == static_cast<int>(0x804600A0) && !device);
+    detail.InitialCommandSize = 32768;
+    detail.InitialTextureSize = 66048;
+    Require(sceFontCreateGraphicsDevice(&memory, &detail, &device) == static_cast<int>(0x804600A1) && !device);
+    detail.InitialTextureSize = 32768;
+    allocationFailure = true;
+    Require(sceFontCreateGraphicsDevice(&memory, &detail, &device) == SCE_FONT_ERROR_ALLOCATION_FAILED && !device);
+    allocationFailure = false;
+    detail.InitialCommandSize = 65536;
+    Require(sceFontCreateGraphicsDevice(&memory, &detail, &device) == static_cast<int>(0x804600A0) && !device && allocations == 1);
+    detail.InitialCommandSize = 32768;
+    for (int i = 0; i < 20; ++i) {
+        Require(sceFontCreateGraphicsDevice(&memory, &detail, &device) == 0 && device && allocations == 2);
+        FontGraphicsDeviceUsage usage{};
+        Require(sceFontGraphicsGetDeviceUsage(device, &usage) == 0);
+        Require(usage.Commands.Main.Size == 65536 && usage.Commands.Main.Used == 34304 && usage.Commands.Main.Available == 31232);
+        Require(usage.Commands.Pool.Size == 31680 && usage.Commands.Pool.Used == 64 && usage.Commands.Pool.Peak == 64);
+        Require(usage.Commands.Main.Change == 34304 && usage.Commands.Pool.Change == 64);
+        Require(usage.Textures.Main.Used == 32768 && usage.Textures.Pool.Size == 32768 && usage.Textures.Pool.Used == 0);
+        Require(usage.Commands.Address == nullptr && usage.Textures.Address == nullptr);
+        Require(sceFontGraphicsGetDeviceUsage(device, &usage) == 0 && usage.Commands.Main.Change == 0 && usage.Commands.Pool.Change == 0 && usage.Textures.Main.Change == 0);
+        Require(sceFontGraphicsGetDeviceUsage(device, nullptr) == SCE_FONT_ERROR_INVALID_PARAMETER);
+        Require(sceFontDestroyGraphicsDevice(&device) == 0 && !device && allocations == 1);
+    }
+    std::vector<std::uint8_t> commands(65536 + 511);
+    std::vector<std::uint8_t> textures(65536 + 511);
+    detail.Commands = reinterpret_cast<void*>((reinterpret_cast<std::uintptr_t>(commands.data()) + 511) & ~std::uintptr_t{511});
+    detail.Textures = reinterpret_cast<void*>((reinterpret_cast<std::uintptr_t>(textures.data()) + 511) & ~std::uintptr_t{511});
+    Require(sceFontCreateGraphicsDevice(&memory, &detail, &device) == 0 && device && allocations == 2);
+    FontGraphicsDeviceUsage usage{};
+    Require(sceFontGraphicsGetDeviceUsage(device, &usage) == 0 && usage.Commands.Address == detail.Commands && usage.Textures.Address == detail.Textures);
+    interface.alloc = nullptr;
+    interface.dealloc = nullptr;
+    Require(sceFontDestroyGraphicsDevice(&device) == 0 && !device && allocations == 1);
+    std::memset(detail.Commands, 0xA5, 65536);
+    std::memset(detail.Textures, 0x5A, 65536);
+    Require(sceFontDestroyGraphicsDevice(nullptr) == SCE_FONT_ERROR_INVALID_PARAMETER);
+    Require(sceFontDestroyGraphicsDevice(&device) == static_cast<int>(0x80460081));
+    Require(sceFontDestroyGraphicsService(&service) == 0 && !service && !shared && allocations == 0);
+}
+
 void CheckConcurrentSharing() {
     const FontMemoryInterface interface{Allocate, Deallocate, nullptr, nullptr, nullptr, nullptr};
     const auto memory = MakeMemory(&interface);
@@ -184,10 +255,17 @@ void CheckConcurrentSharing() {
 }
 
 int main() {
+    std::setvbuf(stdout, nullptr, _IONBF, 0);
+    std::puts("Checking graphics service errors");
     CheckErrors();
+    std::puts("Checking shared graphics service ownership");
     CheckSharing();
+    std::puts("Checking concurrent graphics services");
     CheckConcurrentSharing();
+    std::puts("Checking graphics callback exceptions");
     CheckExceptions();
-    std::puts("Font graphics service lifecycle, rollback and concurrent sharing passed");
+    std::puts("Checking graphics devices");
+    CheckDevices();
+    std::puts("Font graphics service and device lifecycle, rollback and concurrent sharing passed");
     return 0;
 }
