@@ -51,8 +51,8 @@ std::vector<std::uint32_t> Kernel(const std::string& group) {
     } else if (group == "narrow") append(25, 29);
     else if (group == "unaligned") append(29, 31);
     else if (group == "vector4") append(31, 33);
-    else if (group == "vector3") append(33, 35);
-    else if (group == "vector2") append(35, 37);
+    else if (group == "vector3") append(35, 37);
+    else if (group == "vector2") append(33, 35);
     else throw std::invalid_argument("flat store: invalid instruction group");
     code.push_back(FlatStoreCode.back());
     return code;
