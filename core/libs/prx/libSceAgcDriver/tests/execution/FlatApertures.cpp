@@ -3,6 +3,7 @@
 #include "prx/libc/include/GuestAllocations.hpp"
 #include "Recompiler.hpp"
 #include "VulkanTestDevice.hpp"
+#include "ExecutionTestGroup.hpp"
 #ifdef _WIN32
 #ifndef NOMINMAX
 #define NOMINMAX
@@ -471,20 +472,25 @@ std::vector<Row> Rows() {
 
 }
 
-int main() {
+int main(int argc, char** argv) {
     try {
+        const auto group = ExecutionTestGroup(argc, argv);
         const auto device = OpenVulkanTestDevice();
         if (!device) return VulkanTestSkipped;
         const bool wave64 = device->Target().subgroupSize >= 32u;
         GuestBlock guest;
         std::size_t checked = 0;
-        for (const Row& row : Rows()) {
+        const auto rows = Rows();
+        for (std::size_t index = 0; index < rows.size(); ++index) {
+            if (group && index % 32u != *group) continue;
+            const auto& row = rows[index];
             if (row.waveSize == 64u && !wave64) continue;
             Run(*device, row, guest);
             ++checked;
         }
         if (!wave64) std::printf("skipped the wave64 rows, subgroup size %u cannot hold a wave64 in two lanes\n", device->Target().subgroupSize);
         std::printf("flat aperture rows checked: %zu\n", checked);
+        if (checked == 0u) return VulkanTestSkipped;
         std::puts("flat aperture tests passed");
         return 0;
     } catch (const std::exception& error) {

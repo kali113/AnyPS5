@@ -2,6 +2,7 @@
 #include "prx/libc/include/GuestAllocations.hpp"
 #include "Recompiler.hpp"
 #include "VulkanTestDevice.hpp"
+#include "ExecutionTestGroup.hpp"
 #include <algorithm>
 #include <array>
 #include <cstdint>
@@ -278,8 +279,9 @@ bool RunAtomicRow(AgcDriver::VulkanDevice& device, std::uint32_t waveSize, Atomi
 
 }
 
-int main() {
+int main(int argc, char** argv) {
     try {
+        const auto group = ExecutionTestGroup(argc, argv);
         const auto device = OpenVulkanTestDevice();
         if (!device) return VulkanTestSkipped;
         FillData();
@@ -289,15 +291,17 @@ int main() {
             mutation.Add(UnormWords.data(), UnormWords.size() * 4u, true, false);
         }
         int failures = 0;
-        for (const std::uint32_t waveSize : {32u, 64u}) {
-            for (const auto& row : Rows) {
-                if (!RunFormatRow(*device, row, waveSize)) ++failures;
-            }
-            if (!RunAtomicRow(*device, waveSize, AtomicCase::Raw)) ++failures;
-            if (!RunAtomicRow(*device, waveSize, AtomicCase::RawOutOfBounds)) ++failures;
-            if (!RunAtomicRow(*device, waveSize, AtomicCase::Structured)) ++failures;
-            if (!RunAtomicRow(*device, waveSize, AtomicCase::StructuredOutOfBounds)) ++failures;
+        const auto perWave = Rows.size() + 4u;
+        std::size_t checked = 0;
+        for (std::size_t index = 0; index < perWave * 2u; ++index) {
+            if (group && index % 32u != *group) continue;
+            const std::uint32_t waveSize = index < perWave ? 32u : 64u;
+            const auto row = index % perWave;
+            const bool passed = row < Rows.size() ? RunFormatRow(*device, Rows[row], waveSize) : RunAtomicRow(*device, waveSize, static_cast<AtomicCase>(row - Rows.size()));
+            if (!passed) ++failures;
+            ++checked;
         }
+        std::printf("gpu-selected buffer format checks: %zu\n", checked);
         if (failures != 0) {
             std::printf("gpu-selected buffer format: %d checks failed\n", failures);
             return 1;
