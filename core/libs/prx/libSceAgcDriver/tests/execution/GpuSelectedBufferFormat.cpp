@@ -281,7 +281,7 @@ bool RunAtomicRow(AgcDriver::VulkanDevice& device, std::uint32_t waveSize, Atomi
 
 int main(int argc, char** argv) {
     try {
-        const auto group = ExecutionTestGroup(argc, argv);
+        const auto group = ExecutionTestGroup(argc, argv, (Rows.size() + 4u) * 2u);
         const auto device = OpenVulkanTestDevice();
         if (!device) return VulkanTestSkipped;
         FillData();
@@ -294,7 +294,7 @@ int main(int argc, char** argv) {
         const auto perWave = Rows.size() + 4u;
         std::size_t checked = 0;
         for (std::size_t index = 0; index < perWave * 2u; ++index) {
-            if (group && index % 32u != *group) continue;
+            if (group && index != *group) continue;
             const std::uint32_t waveSize = index < perWave ? 32u : 64u;
             const auto row = index % perWave;
             const bool passed = row < Rows.size() ? RunFormatRow(*device, Rows[row], waveSize) : RunAtomicRow(*device, waveSize, static_cast<AtomicCase>(row - Rows.size()));
