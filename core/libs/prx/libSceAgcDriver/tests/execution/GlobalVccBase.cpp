@@ -9,6 +9,7 @@
 #endif
 #include <windows.h>
 #endif
+#include <algorithm>
 #include <array>
 #include <cstdint>
 #include <cstdio>
@@ -166,23 +167,30 @@ void CheckRejections(const AgcDriver::VulkanDevice& device) {
 
 }
 
-int main() {
+int main(int argc, char** argv) {
     try {
+        const std::string mode = argc == 1 ? "all" : argv[1];
+        const std::array<std::string, 6> modes{"base-wave32", "base-wave64", "base-split", "addtid-wave32", "addtid-wave64", "addtid-split"};
+        Require(argc <= 2 && (mode == "all" || std::find(modes.begin(), modes.end(), mode) != modes.end()), "global vcc base: invalid test mode");
         const auto device = OpenVulkanTestDevice();
         if (!device) return VulkanTestSkipped;
-        CheckRejections(*device);
+        if (mode == "all" || mode == "base-wave32") CheckRejections(*device);
         GuestBlock guest;
-        const auto base = ExpectedBase();
-        Run(*device, guest, VccBaseCode, 32, device->Target(), base, "wave32");
-        Run(*device, guest, VccBaseCode, 64, device->Target(), base, "wave64");
-        Run(*device, guest, VccBaseCode, 64, device->ComputeTarget(32), base, "wave64 split");
-        if (device->Target().subgroupSize < 32u) {
-            std::printf("addtid cases skipped, the device's subgroups are narrower than a wave (%u lanes)\n", device->Target().subgroupSize);
-        } else {
-            Run(*device, guest, VccAddtidCode, 32, device->Target(), ExpectedAddtid(32), "addtid wave32");
-            Run(*device, guest, VccAddtidCode, 64, device->Target(), ExpectedAddtid(64), "addtid wave64");
-            Run(*device, guest, VccAddtidCode, 64, device->ComputeTarget(32), ExpectedAddtid(64), "addtid wave64 split");
+        std::size_t checked = 0;
+        for (const auto& candidate : modes) {
+            if (mode != "all" && mode != candidate) continue;
+            const bool addtid = candidate.starts_with("addtid");
+            if (addtid && device->Target().subgroupSize < 32u) {
+                std::printf("%s skipped, the device's subgroups are narrower than a wave (%u lanes)\n", candidate.c_str(), device->Target().subgroupSize);
+                continue;
+            }
+            const std::uint32_t waveSize = candidate.ends_with("wave32") ? 32u : 64u;
+            const auto target = candidate.ends_with("split") ? device->ComputeTarget(32) : device->Target();
+            if (addtid) Run(*device, guest, VccAddtidCode, waveSize, target, ExpectedAddtid(waveSize), candidate);
+            else Run(*device, guest, VccBaseCode, waveSize, target, ExpectedBase(), candidate);
+            ++checked;
         }
+        if (checked == 0u) return VulkanTestSkipped;
         std::puts("global vcc base tests passed");
         return 0;
     } catch (const std::exception& error) {

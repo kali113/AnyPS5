@@ -125,15 +125,21 @@ void RunReadOnly(AgcDriver::VulkanDevice& device, const GuestBlock& guest) {
 
 }
 
-int main() {
+int main(int argc, char** argv) {
     try {
+        const std::string mode = argc == 1 ? "all" : argv[1];
+        Require(argc <= 2 && (mode == "all" || mode == "wave32" || mode == "wave64" || mode == "read-only"), "flat store: invalid test mode");
         const auto device = OpenVulkanTestDevice();
         if (!device) return VulkanTestSkipped;
-        GuestBlock writable(true);
-        const GuestBlock readOnly(false);
-        RunStores(*device, writable, 32);
-        RunStores(*device, writable, 64);
-        RunReadOnly(*device, readOnly);
+        if (mode != "read-only") {
+            GuestBlock writable(true);
+            if (mode == "all" || mode == "wave32") RunStores(*device, writable, 32);
+            if (mode == "all" || mode == "wave64") RunStores(*device, writable, 64);
+        }
+        if (mode == "all" || mode == "read-only") {
+            const GuestBlock readOnly(false);
+            RunReadOnly(*device, readOnly);
+        }
         std::puts("flat store tests passed");
         return 0;
     } catch (const std::exception& error) {
