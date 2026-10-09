@@ -45,7 +45,7 @@ jobs:
           key: ${{ runner.os }}-feature-runtime
           restore-keys: |
             ${{ runner.os }}-
-      - run: cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DBUILD_TESTING=ON -DCMAKE_C_COMPILER=gcc -DCMAKE_CXX_COMPILER=g++ -DANYPS5_ENABLE_SPIRV_TOOLS=ON -DCMAKE_C_COMPILER_LAUNCHER=ccache -DCMAKE_CXX_COMPILER_LAUNCHER=ccache
+      - run: cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DBUILD_TESTING=ON -DCMAKE_C_COMPILER=gcc -DCMAKE_CXX_COMPILER=g++ -DANYPS5_ENABLE_SPIRV_TOOLS=OFF -DCMAKE_C_COMPILER_LAUNCHER=ccache -DCMAKE_CXX_COMPILER_LAUNCHER=ccache
       - run: python3 tools/check_test_registration.py build
       - run: cmake --build build --target agc_driver_flat_apertures_tests agc_driver_gpu_selected_buffer_format_tests agc_driver_tests agc_driver_buffer_format_tests agc_driver_bda_device_tests --parallel 3
       - name: Existing recompiler and buffer checks
