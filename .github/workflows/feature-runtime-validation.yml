@@ -2,6 +2,7 @@ name: Foreign feature runtime probe
 on:
   push:
     branches: [validation/feature-test-runtime]
+    paths: [core/**, CMakeLists.txt]
   workflow_dispatch:
 permissions:
   contents: read
