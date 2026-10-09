@@ -886,19 +886,42 @@ std::uint32_t LoadGpuDescriptorFormatted(SpirvValueEmitContext& ctx, const IrVal
         const auto plan = GpuFormatReadPlan(state, format);
         const auto valid = AndCondition(state, Binary(state, spv::OpINotEqual, TypeBool(state), plan[1], ConstantU32(state, 0u)), GpuDescriptorElementInBoundsValue(state, access, offset, plan[0]));
         rawMemory = EmitComponentsOrZeroIfCondition(state, valid, 4u, [&] {
-            std::array<std::uint32_t, 4> values{};
-            for (std::uint32_t component = 0; component < 4u; ++component) {
-                values[component] = EmitValueOrZeroIfCondition(state, Binary(state, spv::OpULessThan, TypeBool(state), ConstantU32(state, component), plan[1]), [&] {
-                    const auto delta = Binary(state, spv::OpIMul, u32, ConstantU32(state, component), plan[3]);
-                    const auto address = Binary(state, spv::OpIAdd, u64, element, Unary(state, spv::OpUConvert, u64, delta));
-                    return EmitValueIfElse(state, Binary(state, spv::OpIEqual, TypeBool(state), plan[2], ConstantU32(state, 8u)), u32,
-                        [&] { return EmitBdaRead(ctx, inst, address, 8u); },
-                        [&] {
-                            return EmitValueIfElse(state, Binary(state, spv::OpIEqual, TypeBool(state), plan[2], ConstantU32(state, 16u)), u32,
-                                [&] { return EmitBdaRead(ctx, inst, address, 16u); },
-                                [&] { return EmitBdaRead(ctx, inst, address, 32u); });
-                        });
+            const auto before = state.currentLabel;
+            const auto header = state.module.AllocateId();
+            const auto body = state.module.AllocateId();
+            const auto continuation = state.module.AllocateId();
+            const auto merge = state.module.AllocateId();
+            const auto component = state.module.AllocateId();
+            const auto nextComponent = state.module.AllocateId();
+            const auto accumulated = state.module.AllocateId();
+            const auto inserted = state.module.AllocateId();
+            state.module.AddFunction(spv::OpBranch, header);
+            EmitLabel(state, header);
+            state.module.AddFunction(spv::OpPhi, u32, component, ConstantU32(state, 0u), before, nextComponent, continuation);
+            state.module.AddFunction(spv::OpPhi, TypeU32Composite(state, 4u), accumulated, ConstantU32CompositeZero(state, 4u), before, inserted, continuation);
+            const auto hasComponent = Binary(state, spv::OpULessThan, TypeBool(state), component, plan[1]);
+            state.module.AddFunction(spv::OpLoopMerge, merge, continuation, spv::LoopControlDontUnrollMask);
+            state.module.AddFunction(spv::OpBranchConditional, hasComponent, body, merge);
+            EmitLabel(state, body);
+            const auto delta = Binary(state, spv::OpIMul, u32, component, plan[3]);
+            const auto address = Binary(state, spv::OpIAdd, u64, element, Unary(state, spv::OpUConvert, u64, delta));
+            const auto value = EmitValueIfElse(state, Binary(state, spv::OpIEqual, TypeBool(state), plan[2], ConstantU32(state, 8u)), u32,
+                [&] { return EmitBdaRead(ctx, inst, address, 8u); },
+                [&] {
+                    return EmitValueIfElse(state, Binary(state, spv::OpIEqual, TypeBool(state), plan[2], ConstantU32(state, 16u)), u32,
+                        [&] { return EmitBdaRead(ctx, inst, address, 16u); },
+                        [&] { return EmitBdaRead(ctx, inst, address, 32u); });
                 });
+            state.module.AddFunction(spv::OpBranch, continuation);
+            EmitLabel(state, continuation);
+            state.module.AddFunction(spv::OpVectorInsertDynamic, TypeU32Composite(state, 4u), inserted, accumulated, value, component);
+            state.module.AddFunction(spv::OpIAdd, u32, nextComponent, component, ConstantU32(state, 1u));
+            state.module.AddFunction(spv::OpBranch, header);
+            EmitLabel(state, merge);
+            std::array<std::uint32_t, 4> values{};
+            for (std::uint32_t index = 0; index < 4u; ++index) {
+                values[index] = state.module.AllocateId();
+                state.module.AddFunction(spv::OpCompositeExtract, u32, values[index], accumulated, index);
             }
             return values;
         });

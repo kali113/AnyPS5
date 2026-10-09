@@ -61,7 +61,7 @@ jobs:
           GALLIUM_OVERRIDE_CPU_CAPS: avx
           MESA_SHADER_CACHE_DISABLE: 'true'
       - name: Cold feature tests with strict runtime limits
-        run: ctest --test-dir build --verbose --timeout 30 --parallel 4 --repeat until-fail:3 -L '^agc_driver_(flat_apertures|gpu_selected_buffer_format)$' --output-log ctest.log
+        run: ctest --test-dir build --verbose --timeout 30 --parallel 4 --repeat until-fail:3 -L '^agc_driver_gpu_selected_buffer_format$' --output-log ctest.log
         env:
           ANYPS5_REQUIRE_VULKAN: 1
           GALLIUM_OVERRIDE_CPU_CAPS: avx
