@@ -1,6 +1,10 @@
 function(add_sce_font_library target)
     set(fontDir ${CMAKE_CURRENT_FUNCTION_LIST_DIR})
+    set_source_files_properties(${fontDir}/src/GraphicsParameters.cpp PROPERTIES
+            COMPILE_OPTIONS "-fvisibility=default"
+    )
     add_library(${target} SHARED EXCLUDE_FROM_ALL
+            ${fontDir}/src/GraphicsParameters.cpp
             ${fontDir}/src/Layout.cpp
             ${fontDir}/src/Library.cpp
             ${fontDir}/src/Open.cpp
