@@ -474,7 +474,7 @@ std::vector<Row> Rows() {
 
 int main(int argc, char** argv) {
     try {
-        const auto group = ExecutionTestGroup(argc, argv);
+        const auto group = ExecutionTestGroup(argc, argv, 64u);
         const auto device = OpenVulkanTestDevice();
         if (!device) return VulkanTestSkipped;
         const bool wave64 = device->Target().subgroupSize >= 32u;
@@ -482,7 +482,7 @@ int main(int argc, char** argv) {
         std::size_t checked = 0;
         const auto rows = Rows();
         for (std::size_t index = 0; index < rows.size(); ++index) {
-            if (group && index % 32u != *group) continue;
+            if (group && index % 64u != *group) continue;
             const auto& row = rows[index];
             if (row.waveSize == 64u && !wave64) continue;
             Run(*device, row, guest);
