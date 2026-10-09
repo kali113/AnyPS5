@@ -235,8 +235,24 @@ std::pair<std::uint32_t, std::uint32_t> RuntimeBufferByteAddress(SpirvEmitterSta
     return {offset, add(Select(state, u32, swizzle, swizzled, linear), soffset)};
 }
 
-template <typename TFunction>
-void ForEachGpuDescriptorDword(SpirvValueEmitContext& ctx, const IrValue& inst, const MemoryInfo& mem, std::uint32_t components, TFunction&& function) {
+struct GpuDescriptorAccess {
+    std::uint32_t base = 0;
+    std::uint32_t word3 = 0;
+    std::uint32_t index = 0;
+    std::uint32_t soffset = 0;
+    std::uint32_t stride = 0;
+    std::uint32_t swizzle = 0;
+    std::uint32_t indexStride = 0;
+    std::uint32_t mode = 0;
+    std::uint32_t records = 0;
+    std::uint32_t formatNonzero = 0;
+    std::uint32_t indexInBounds = 0;
+    std::uint32_t scalarInBounds = 0;
+    std::uint32_t rawRecords = 0;
+    std::uint32_t rawIndexInBounds = 0;
+};
+
+GpuDescriptorAccess PrepareGpuDescriptorAccess(SpirvValueEmitContext& ctx, const IrValue& inst) {
     auto& state = ctx.state;
     const IrValue* handle = inst.Argument(0)->Resolve();
     if (handle->Opcode() != IrOpcode::GetBufferResource || handle->ArgumentCount() != 4u) {
@@ -245,32 +261,49 @@ void ForEachGpuDescriptorDword(SpirvValueEmitContext& ctx, const IrValue& inst, 
     const auto u32 = TypeU32(state);
     const auto boolean = TypeBool(state);
     const auto word1 = ctx.Arg(*handle, 1);
-    const auto records = ctx.Arg(*handle, 2);
     const auto word3 = ctx.Arg(*handle, 3);
     const auto field = [&](std::uint32_t word, std::uint32_t first, std::uint32_t count) { return EmitBitFieldUExtract(state, word, ConstantU32(state, first), ConstantU32(state, count)); };
     const auto nonzero = [&](std::uint32_t value) { return Binary(state, spv::OpINotEqual, boolean, value, ConstantU32(state, 0u)); };
-    const auto hasDword = [&](std::uint32_t offset, std::uint32_t size) {
-        return AndCondition(state, Binary(state, spv::OpUGreaterThanEqual, boolean, size, ConstantU32(state, 4u)), Binary(state, spv::OpULessThanEqual, boolean, offset, Binary(state, spv::OpISub, u32, size, ConstantU32(state, 4u))));
-    };
-    const auto stride = field(word1, 16u, 14u);
-    const auto swizzle = AndCondition(state, nonzero(stride), nonzero(field(word1, 31u, 1u)));
+    GpuDescriptorAccess access{};
+    access.word3 = word3;
+    access.records = ctx.Arg(*handle, 2);
+    access.stride = field(word1, 16u, 14u);
+    access.swizzle = AndCondition(state, nonzero(access.stride), nonzero(field(word1, 31u, 1u)));
     const auto lane = Binary(state, spv::OpBitwiseAnd, u32, EmitSubgroupLocalInvocationId(state), ConstantU32(state, 63u));
-    const auto index = Binary(state, spv::OpIAdd, u32, ctx.Arg(inst, 1), Select(state, u32, nonzero(field(word3, 23u, 1u)), lane, ConstantU32(state, 0u)));
-    const auto soffset = ctx.Arg(inst, 3);
-    const auto base = DeviceAddressFromWords(state, ctx.Arg(*handle, 0), field(word1, 0u, 16u));
-    const auto mode = field(word3, 28u, 2u);
-    const auto indexInBounds = Binary(state, spv::OpULessThan, boolean, index, records);
-    const auto scalarInBounds = Binary(state, spv::OpULessThanEqual, boolean, soffset, records);
-    const auto rawRecords = Binary(state, spv::OpISub, u32, records, soffset);
-    const auto rawIndexInBounds = Binary(state, spv::OpULessThan, boolean, index, rawRecords);
+    access.index = Binary(state, spv::OpIAdd, u32, ctx.Arg(inst, 1), Select(state, u32, nonzero(field(word3, 23u, 1u)), lane, ConstantU32(state, 0u)));
+    access.soffset = ctx.Arg(inst, 3);
+    access.base = DeviceAddressFromWords(state, ctx.Arg(*handle, 0), field(word1, 0u, 16u));
+    access.mode = field(word3, 28u, 2u);
+    access.indexStride = field(word3, 21u, 2u);
+    access.formatNonzero = nonzero(field(word3, 12u, 7u));
+    access.indexInBounds = Binary(state, spv::OpULessThan, boolean, access.index, access.records);
+    access.scalarInBounds = Binary(state, spv::OpULessThanEqual, boolean, access.soffset, access.records);
+    access.rawRecords = Binary(state, spv::OpISub, u32, access.records, access.soffset);
+    access.rawIndexInBounds = Binary(state, spv::OpULessThan, boolean, access.index, access.rawRecords);
+    return access;
+}
+
+std::uint32_t GpuDescriptorElementInBounds(SpirvEmitterState& state, const GpuDescriptorAccess& access, std::uint32_t offset, std::uint32_t elementBytes) {
+    const auto u32 = TypeU32(state);
+    const auto boolean = TypeBool(state);
+    const auto fits = [&](std::uint32_t size) {
+        return AndCondition(state, Binary(state, spv::OpUGreaterThanEqual, boolean, size, ConstantU32(state, elementBytes)), Binary(state, spv::OpULessThanEqual, boolean, offset, Binary(state, spv::OpISub, u32, size, ConstantU32(state, elementBytes))));
+    };
+    const auto structured = AndCondition(state, access.indexInBounds, fits(access.stride));
+    const auto raw = AndCondition(state, access.scalarInBounds, Select(state, boolean, access.swizzle, AndCondition(state, access.rawIndexInBounds, fits(access.stride)), fits(access.rawRecords)));
+    auto inBounds = Select(state, boolean, Binary(state, spv::OpIEqual, boolean, access.mode, ConstantU32(state, 0u)), structured, access.indexInBounds);
+    inBounds = Select(state, boolean, Binary(state, spv::OpULessThan, boolean, access.mode, ConstantU32(state, 2u)), inBounds, Select(state, boolean, Binary(state, spv::OpIEqual, boolean, access.mode, ConstantU32(state, 2u)), Binary(state, spv::OpINotEqual, boolean, access.records, ConstantU32(state, 0u)), raw));
+    return AndCondition(state, access.formatNonzero, inBounds);
+}
+
+template <typename TFunction>
+void ForEachGpuDescriptorDword(SpirvValueEmitContext& ctx, const IrValue& inst, const MemoryInfo& mem, std::uint32_t components, TFunction&& function) {
+    auto& state = ctx.state;
+    const auto access = PrepareGpuDescriptorAccess(ctx, inst);
     for (std::uint32_t component = 0; component < components; component++) {
-        const auto [offset, byte] = RuntimeBufferByteAddress(state, index, ctx.Arg(inst, 2), soffset, mem.offset + component * 4u, stride, swizzle, field(word3, 21u, 2u));
-        const auto structured = AndCondition(state, indexInBounds, Binary(state, spv::OpULessThan, boolean, offset, stride));
-        const auto raw = AndCondition(state, scalarInBounds, Select(state, boolean, swizzle, AndCondition(state, rawIndexInBounds, hasDword(offset, stride)), hasDword(offset, rawRecords)));
-        auto inBounds = Select(state, boolean, Binary(state, spv::OpIEqual, boolean, mode, ConstantU32(state, 0u)), structured, indexInBounds);
-        inBounds = Select(state, boolean, Binary(state, spv::OpULessThan, boolean, mode, ConstantU32(state, 2u)), inBounds, Select(state, boolean, Binary(state, spv::OpIEqual, boolean, mode, ConstantU32(state, 2u)), nonzero(records), raw));
-        const auto guest = Binary(state, spv::OpIAdd, TypeScalarU64(state), base, Unary(state, spv::OpUConvert, TypeScalarU64(state), byte));
-        function(component, guest, AndCondition(state, nonzero(field(word3, 12u, 7u)), inBounds));
+        const auto [offset, byte] = RuntimeBufferByteAddress(state, access.index, ctx.Arg(inst, 2), access.soffset, mem.offset + component * 4u, access.stride, access.swizzle, access.indexStride);
+        const auto guest = Binary(state, spv::OpIAdd, TypeScalarU64(state), access.base, Unary(state, spv::OpUConvert, TypeScalarU64(state), byte));
+        function(component, guest, GpuDescriptorElementInBounds(state, access, offset, 4u));
     }
 }
 
@@ -368,9 +401,8 @@ std::uint32_t FormattedConstant(SpirvValueEmitContext& ctx, const SpirvBufferFor
 }
 
 template<typename TLoadWord, typename TLoadSubword>
-std::uint32_t LoadFormattedComponent(SpirvValueEmitContext& ctx, const MemoryInfo& mem, const SpirvBufferFormatInfo& info, std::uint32_t outputComponent, TLoadWord&& loadWord, TLoadSubword&& loadSubword) {
+std::uint32_t LoadFormattedSource(SpirvValueEmitContext& ctx, const MemoryInfo& mem, const SpirvBufferFormatInfo& info, SpirvFormattedSource source, TLoadWord&& loadWord, TLoadSubword&& loadSubword) {
     auto& state = ctx.state;
-    const auto source = ResolveOutputSource(ctx, mem, info, outputComponent);
     if (source.kind != SpirvFormattedSourceKind::Memory) {
         const bool integer = info.type == SpirvFormatComponentType::Uint || info.type == SpirvFormatComponentType::Sint;
         if (mem.d16 && source.kind == SpirvFormattedSourceKind::One && !integer) return ConstantU32(state, 0x3c00u);
@@ -393,6 +425,11 @@ std::uint32_t LoadFormattedComponent(SpirvValueEmitContext& ctx, const MemoryInf
         raw = loadSubword(component, bits, signedType);
     }
     return mem.d16 ? EmitD16FormatComponent(state, info, component, raw) : NormalizeFormatComponent(state, info, component, raw);
+}
+
+template<typename TLoadWord, typename TLoadSubword>
+std::uint32_t LoadFormattedComponent(SpirvValueEmitContext& ctx, const MemoryInfo& mem, const SpirvBufferFormatInfo& info, std::uint32_t outputComponent, TLoadWord&& loadWord, TLoadSubword&& loadSubword) {
+    return LoadFormattedSource(ctx, mem, info, ResolveOutputSource(ctx, mem, info, outputComponent), std::forward<TLoadWord>(loadWord), std::forward<TLoadSubword>(loadSubword));
 }
 
 std::uint32_t FormattedLoadPrepared(SpirvValueEmitContext& ctx, const IrValue& inst, const MemoryInfo& mem, std::uint32_t outputComponent, const MemoryResourceAccess& resource) {
@@ -738,10 +775,142 @@ const MemoryInfo& BufferMemory(SpirvValueEmitContext& ctx, const IrValue& inst) 
     if (mem.kind != ResourceKind::Buffer) {
         ctx.Fail(inst, "must access a buffer resource");
     }
-    if (mem.gpuDescriptor) {
-        ctx.Fail(inst, "accesses a GPU-selected V# in a way only raw dword loads and stores support");
+    if (mem.gpuDescriptor && BufferAccessOf(inst.Opcode()) != BufferAccess::Atomic) {
+        ctx.Fail(inst, "accesses a GPU-selected V# in a way only raw dword loads, stores and dword atomics support");
     }
     return mem;
+}
+
+template<typename TFunction>
+std::array<std::uint32_t, 4> EmitComponentsOrZeroIfCondition(SpirvEmitterState& state, std::uint32_t condition, std::uint32_t components, TFunction&& function) {
+    const auto thenLabel = state.module.AllocateId();
+    const auto thenExit = state.module.AllocateId();
+    const auto elseLabel = state.module.AllocateId();
+    const auto mergeLabel = state.module.AllocateId();
+    state.module.AddFunction(spv::OpSelectionMerge, mergeLabel, spv::SelectionControlMaskNone);
+    state.module.AddFunction(spv::OpBranchConditional, condition, thenLabel, elseLabel);
+    EmitLabel(state, thenLabel);
+    const auto values = function();
+    state.module.AddFunction(spv::OpBranch, thenExit);
+    EmitLabel(state, thenExit);
+    state.module.AddFunction(spv::OpBranch, mergeLabel);
+    EmitLabel(state, elseLabel);
+    state.module.AddFunction(spv::OpBranch, mergeLabel);
+    EmitLabel(state, mergeLabel);
+    std::array<std::uint32_t, 4> result{};
+    for (std::uint32_t component = 0; component < components; component++) {
+        result[component] = state.module.AllocateId();
+        state.module.AddFunction(spv::OpPhi, TypeU32(state), result[component], values[component], thenExit, ConstantU32(state, 0u), elseLabel);
+    }
+    return result;
+}
+
+std::uint32_t LoadGpuDescriptorFormatted(SpirvValueEmitContext& ctx, const IrValue& inst, std::uint32_t components) {
+    auto& state = ctx.state;
+    const auto& mem = ctx.Memory(inst);
+    if (mem.d16) ctx.Fail(inst, "is a D16 format load through a GPU-selected V#");
+    const auto u32 = TypeU32(state);
+    const auto u64 = TypeScalarU64(state);
+    const auto access = PrepareGpuDescriptorAccess(ctx, inst);
+    const auto [offset, byte] = RuntimeBufferByteAddress(state, access.index, ctx.Arg(inst, 2), access.soffset, mem.offset, access.stride, access.swizzle, access.indexStride);
+    const auto element = Binary(state, spv::OpIAdd, u64, access.base, Unary(state, spv::OpUConvert, u64, byte));
+    const auto word3 = access.word3;
+    const auto convert = [&](const SpirvBufferFormatInfo& info) {
+        const auto at = [&](std::uint32_t component) {
+            return Binary(state, spv::OpIAdd, u64, element, ConstantDeviceAddress(state, GetFormatComponentByteOffset(info, component)));
+        };
+        const auto loadWord = [&](std::uint32_t component) { return EmitBdaRead(ctx, inst, at(component), 32u); };
+        const auto loadSubword = [&](std::uint32_t component, std::uint32_t bits, bool signExtend) {
+            const auto raw = EmitBdaRead(ctx, inst, at(component), bits);
+            if (!signExtend) return raw;
+            const auto extended = state.module.AllocateId();
+            state.module.AddFunction(spv::OpBitFieldSExtract, TypeI32(state), extended, Unary(state, spv::OpBitcast, TypeI32(state), raw), ConstantU32(state, 0u), ConstantU32(state, bits));
+            return Unary(state, spv::OpBitcast, u32, extended);
+        };
+        const auto memoryCount = mem.typed ? (components < info.componentCount ? components : info.componentCount) : info.componentCount;
+        std::array<std::uint32_t, 4> memory{};
+        for (std::uint32_t component = 0; component < memoryCount; component++) {
+            memory[component] = LoadFormattedSource(ctx, mem, info, SpirvFormattedSource{SpirvFormattedSourceKind::Memory, component}, loadWord, loadSubword);
+        }
+        std::array<std::uint32_t, 4> outputs{};
+        if (mem.typed) {
+            for (std::uint32_t output = 0; output < components; output++) {
+                outputs[output] = output < memoryCount ? memory[output] : ConstantU32(state, 0u);
+            }
+            return outputs;
+        }
+        for (std::uint32_t output = 0; output < components; output++) {
+            std::array<std::uint32_t, 8> candidates{};
+            for (std::uint32_t selector = 0; selector < 8u; selector++) {
+                const auto source = ResolveGpuSelectedSource(info, output, selector);
+                candidates[selector] = source.kind == SpirvFormattedSourceKind::Memory ? memory[source.component] : FormattedConstant(ctx, info, source.kind);
+            }
+            const auto selector = EmitBitFieldUExtract(state, word3, ConstantU32(state, output * 3u), ConstantU32(state, 3u));
+            auto value = candidates[0];
+            for (std::uint32_t candidate = 1; candidate < 8u; candidate++) {
+                value = Select(state, u32, Binary(state, spv::OpIEqual, TypeBool(state), selector, ConstantU32(state, candidate)), candidates[candidate], value);
+            }
+            outputs[output] = value;
+        }
+        return outputs;
+    };
+    std::array<std::uint32_t, 4> results{};
+    if (mem.typed) {
+        const auto info = GetFormatInfo(DecodeTBufferFormat(mem.dataFormat, mem.numberFormat));
+        if (info.type == SpirvFormatComponentType::Unknown) ctx.Fail(inst, "is a typed load with an unknown format through a GPU-selected V#");
+        results = EmitComponentsOrZeroIfCondition(state, GpuDescriptorElementInBounds(state, access, offset, info.byteSize), components, [&] { return convert(info); });
+    } else {
+        std::vector<SpirvBufferFormatInfo> formats;
+        static const std::vector<SpirvBufferFormatInfo> known = [] {
+            std::vector<SpirvBufferFormatInfo> result;
+            for (std::uint32_t format = 1; format < 128u; format++) {
+                try {
+                    const auto info = GetFormatInfo(static_cast<IrBufferFormat>(format));
+                    if (info.type != SpirvFormatComponentType::Unknown && info.componentCount != 0u) result.push_back(info);
+                } catch (const std::exception&) {
+                }
+            }
+            return result;
+        }();
+        formats = known;
+        const auto format = EmitBitFieldUExtract(state, word3, ConstantU32(state, 12u), ConstantU32(state, 7u));
+        const auto defaultLabel = state.module.AllocateId();
+        const auto mergeLabel = state.module.AllocateId();
+        std::vector<std::uint32_t> labels(formats.size());
+        std::vector<std::uint32_t> words{spv::OpSwitch, format, defaultLabel};
+        for (std::size_t arm = 0; arm < formats.size(); arm++) {
+            labels[arm] = state.module.AllocateId();
+            words.push_back(static_cast<std::uint32_t>(formats[arm].format));
+            words.push_back(labels[arm]);
+        }
+        state.module.AddFunction(spv::OpSelectionMerge, mergeLabel, spv::SelectionControlMaskNone);
+        state.module.AddFunction(std::span<const std::uint32_t>(words));
+        std::vector<std::array<std::uint32_t, 4>> armValues(formats.size());
+        std::vector<std::uint32_t> armExits(formats.size());
+        for (std::size_t arm = 0; arm < formats.size(); arm++) {
+            EmitLabel(state, labels[arm]);
+            armValues[arm] = EmitComponentsOrZeroIfCondition(state, GpuDescriptorElementInBounds(state, access, offset, formats[arm].byteSize), components, [&] { return convert(formats[arm]); });
+            armExits[arm] = state.module.AllocateId();
+            state.module.AddFunction(spv::OpBranch, armExits[arm]);
+            EmitLabel(state, armExits[arm]);
+            state.module.AddFunction(spv::OpBranch, mergeLabel);
+        }
+        EmitLabel(state, defaultLabel);
+        state.module.AddFunction(spv::OpBranch, mergeLabel);
+        EmitLabel(state, mergeLabel);
+        for (std::uint32_t output = 0; output < components; output++) {
+            std::vector<std::uint32_t> phi{spv::OpPhi, u32, state.module.AllocateId()};
+            for (std::size_t arm = 0; arm < formats.size(); arm++) {
+                phi.push_back(armValues[arm][output]);
+                phi.push_back(armExits[arm]);
+            }
+            phi.push_back(ConstantU32(state, 0u));
+            phi.push_back(defaultLabel);
+            state.module.AddFunction(std::span<const std::uint32_t>(phi));
+            results[output] = phi[2];
+        }
+    }
+    return components == 1u ? results[0] : ConstructU32Composite(state, components, results);
 }
 
 bool EmitGpuDescriptorAccess(SpirvValueEmitContext& ctx, const IrValue& inst, std::uint32_t components, bool store) {
@@ -755,7 +924,8 @@ bool EmitGpuDescriptorAccess(SpirvValueEmitContext& ctx, const IrValue& inst, st
     }
     const auto type = components == 1u ? TypeU32(state) : TypeU32Composite(state, components);
     const auto zero = components == 1u ? ConstantU32(state, 0u) : ConstantU32CompositeZero(state, components);
-    ctx.Define(inst, EmitValueOrDefaultIfCondition(state, ActiveArgument(ctx, inst), type, zero, [&] { return LoadGpuDescriptor(ctx, inst, components); }));
+    const bool formatted = ctx.Memory(inst).formatted || ctx.Memory(inst).typed;
+    ctx.Define(inst, EmitValueOrDefaultIfCondition(state, ActiveArgument(ctx, inst), type, zero, [&] { return formatted ? LoadGpuDescriptorFormatted(ctx, inst, components) : LoadGpuDescriptor(ctx, inst, components); }));
     return true;
 }
 
@@ -1124,6 +1294,23 @@ void NoteBufferAtomicSite(bool zeroSkip, bool zeroLoad) {
 
 std::uint32_t Atomic32(SpirvValueEmitContext& ctx, const IrValue& inst, const MemoryInfo& mem) {
     auto& state = ctx.state;
+    if (mem.gpuDescriptor) {
+        return EmitValueOrZeroIfCondition(state, ActiveArgument(ctx, inst), [&] {
+            std::uint32_t guest = 0;
+            std::uint32_t inBounds = 0;
+            ForEachGpuDescriptorDword(ctx, inst, mem, 1u, [&](std::uint32_t, std::uint32_t address, std::uint32_t valid) {
+                guest = address;
+                inBounds = valid;
+            });
+            return EmitValueOrZeroIfCondition(state, inBounds, [&] {
+                return EmitBdaAtomic(ctx, inst, guest, 4u, [&](std::uint32_t pointer) {
+                    const auto old = EmitAtomicOperation(ctx, inst, pointer, spv::ScopeDevice);
+                    EmitDeviceAtomicMemoryBarrier(state);
+                    return old;
+                });
+            });
+        });
+    }
     const bool lds = mem.kind == ResourceKind::Lds;
     const std::uint32_t scope = lds ? spv::ScopeWorkgroup : spv::ScopeDevice;
     // Buffer atomic arguments are {resource, index, offset, soffset, value, exec}. A non-zero
