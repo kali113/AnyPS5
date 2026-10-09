@@ -637,7 +637,28 @@ if(BUILD_TESTING)
                 "PATH=path_list_prepend:$<TARGET_FILE_DIR:libc>")
         endif()
     endforeach()
-    set_tests_properties(agc_driver_flat_store PROPERTIES RUN_SERIAL TRUE)
+    foreach(flatStoreMode IN ITEMS wave64 read-only)
+        add_test(NAME agc_driver_flat_store_${flatStoreMode} COMMAND agc_driver_flat_store_tests ${flatStoreMode})
+        set_tests_properties(agc_driver_flat_store_${flatStoreMode} PROPERTIES
+                ENVIRONMENT "ANYPS5_NO_SHADER_CACHE=1" SKIP_RETURN_CODE 77 WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}")
+        if(WIN32)
+            set_tests_properties(agc_driver_flat_store_${flatStoreMode} PROPERTIES ENVIRONMENT_MODIFICATION
+                    "PATH=path_list_prepend:$<TARGET_FILE_DIR:libc>")
+        endif()
+    endforeach()
+    foreach(vccMode IN ITEMS base-wave64 base-split addtid-wave32 addtid-wave64 addtid-split)
+        add_test(NAME agc_driver_global_vcc_base_${vccMode} COMMAND agc_driver_global_vcc_base_tests ${vccMode})
+        set_tests_properties(agc_driver_global_vcc_base_${vccMode} PROPERTIES
+                ENVIRONMENT "ANYPS5_NO_SHADER_CACHE=1" SKIP_RETURN_CODE 77 WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}")
+        if(WIN32)
+            set_tests_properties(agc_driver_global_vcc_base_${vccMode} PROPERTIES ENVIRONMENT_MODIFICATION
+                    "PATH=path_list_prepend:$<TARGET_FILE_DIR:libc>")
+        endif()
+    endforeach()
+    set_tests_properties(agc_driver_flat_store agc_driver_flat_store_wave64 agc_driver_flat_store_read-only
+            agc_driver_global_vcc_base agc_driver_global_vcc_base_base-wave64 agc_driver_global_vcc_base_base-split
+            agc_driver_global_vcc_base_addtid-wave32 agc_driver_global_vcc_base_addtid-wave64 agc_driver_global_vcc_base_addtid-split
+            PROPERTIES RUN_SERIAL TRUE TIMEOUT 30)
     add_test(NAME agc_driver_pm4_failure COMMAND agc_driver_pm4_tests failure)
     set_tests_properties(agc_driver_pm4_failure PROPERTIES ENVIRONMENT "ANYPS5_NO_SHADER_CACHE=1" SKIP_RETURN_CODE 77)
     if(WIN32)

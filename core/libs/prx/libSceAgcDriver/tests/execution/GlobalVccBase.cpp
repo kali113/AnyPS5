@@ -9,6 +9,7 @@
 #endif
 #include <windows.h>
 #endif
+#include <algorithm>
 #include <array>
 #include <cstdint>
 #include <cstdio>
@@ -166,23 +167,24 @@ void CheckRejections(const AgcDriver::VulkanDevice& device) {
 
 }
 
-int main() {
+int main(int argc, char** argv) {
     try {
+        const std::string mode = argc == 1 ? "base-wave32" : argv[1];
+        const std::array<std::string, 6> modes{"base-wave32", "base-wave64", "base-split", "addtid-wave32", "addtid-wave64", "addtid-split"};
+        Require(argc <= 2 && std::find(modes.begin(), modes.end(), mode) != modes.end(), "global vcc base: invalid test mode");
         const auto device = OpenVulkanTestDevice();
         if (!device) return VulkanTestSkipped;
-        CheckRejections(*device);
-        GuestBlock guest;
-        const auto base = ExpectedBase();
-        Run(*device, guest, VccBaseCode, 32, device->Target(), base, "wave32");
-        Run(*device, guest, VccBaseCode, 64, device->Target(), base, "wave64");
-        Run(*device, guest, VccBaseCode, 64, device->ComputeTarget(32), base, "wave64 split");
-        if (device->Target().subgroupSize < 32u) {
+        if (mode == "base-wave32") CheckRejections(*device);
+        const bool addtid = mode.starts_with("addtid");
+        if (addtid && device->Target().subgroupSize < 32u) {
             std::printf("addtid cases skipped, the device's subgroups are narrower than a wave (%u lanes)\n", device->Target().subgroupSize);
-        } else {
-            Run(*device, guest, VccAddtidCode, 32, device->Target(), ExpectedAddtid(32), "addtid wave32");
-            Run(*device, guest, VccAddtidCode, 64, device->Target(), ExpectedAddtid(64), "addtid wave64");
-            Run(*device, guest, VccAddtidCode, 64, device->ComputeTarget(32), ExpectedAddtid(64), "addtid wave64 split");
+            return VulkanTestSkipped;
         }
+        const std::uint32_t waveSize = mode.ends_with("wave32") ? 32u : 64u;
+        const auto target = mode.ends_with("split") ? device->ComputeTarget(32) : device->Target();
+        GuestBlock guest;
+        if (addtid) Run(*device, guest, VccAddtidCode, waveSize, target, ExpectedAddtid(waveSize), mode);
+        else Run(*device, guest, VccBaseCode, waveSize, target, ExpectedBase(), mode);
         std::puts("global vcc base tests passed");
         return 0;
     } catch (const std::exception& error) {
