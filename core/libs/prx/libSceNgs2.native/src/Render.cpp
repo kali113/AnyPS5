@@ -216,25 +216,33 @@ float Ngs2DefaultLevel(std::uint32_t sourceChannels, std::uint32_t source, std::
     }
 }
 
-static void MixPort(Ngs2Voice& voice, const Ngs2Voice& source, const Ngs2Port& port, std::uint32_t grain) {
+static void MixPort(Ngs2Voice& voice, const Ngs2Voice& source, const std::vector<float>& input, const Ngs2Port& port, std::uint32_t grain) {
     const auto* matrix = port.matrix < 0 || source.matrices[port.matrix].empty() ? nullptr : &source.matrices[port.matrix];
     const std::size_t outputs = matrix == nullptr ? voice.channels : std::min<std::size_t>(voice.channels, matrix->size() / source.channels);
     for (std::size_t dst = 0; dst < outputs; dst++) {
         for (std::uint32_t src = 0; src < source.channels; src++) {
             const float level = port.volume * (matrix == nullptr ? Ngs2DefaultLevel(source.channels, src, voice.channels, static_cast<std::uint32_t>(dst)) : (*matrix)[dst * source.channels + src]);
             if (level == 0.0f) continue;
-            for (std::uint32_t i = 0; i < grain; i++) voice.samples[dst * grain + i] += source.samples[src * grain + i] * level;
+            for (std::uint32_t i = 0; i < grain; i++) voice.samples[dst * grain + i] += input[src * grain + i] * level;
         }
     }
 }
 
 static void MixInputs(Ngs2Voice& voice, const std::vector<Ngs2Voice*>& voices, std::uint32_t grain, std::uint32_t systemRate) {
     for (auto* source : voices) {
-        for (const auto& port : source->ports) {
+        for (std::size_t p = 0; p < source->ports.size(); p++) {
+            const auto& port = source->ports[p];
             if (port.dest != &voice || port.volume == 0.0f) continue;
             RenderVoice(*source, voices, grain, systemRate);
-            if (!source->hasSamples) continue;
-            MixPort(voice, *source, port, grain);
+            if (source->rack->customPortBuffers.empty()) {
+                if (!source->hasSamples) continue;
+                MixPort(voice, *source, source->samples, port, grain);
+            } else {
+                const auto bufferId = source->rack->customPortBuffers[p];
+                if (source->customBufferHasSamples.empty() || !source->customBufferHasSamples[bufferId]) continue;
+                const auto& input = bufferId == 0 ? source->samples : source->customBuffers[bufferId];
+                MixPort(voice, *source, input, port, grain);
+            }
             voice.hasSamples = true;
         }
     }

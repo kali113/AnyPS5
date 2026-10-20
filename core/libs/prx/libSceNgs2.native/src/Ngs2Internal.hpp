@@ -134,6 +134,8 @@ struct Ngs2Voice {
     float fbwLevel = 1.0f;
     float lfeLevel = 1.0f;
     std::vector<Ngs2UserFx2> userFx;
+    std::vector<std::vector<float>> customBuffers;
+    std::vector<std::uint8_t> customBufferHasSamples;
     std::vector<Ngs2VoiceCustomUserFx> customUserFx;
     Ngs2UserFxProcessHandler userFxHandler = nullptr;
     std::array<std::uintptr_t, 3> userFxData{};
@@ -164,6 +166,9 @@ struct Ngs2Rack {
     std::vector<Ngs2CustomUserFx2ModuleOption> userFx;
     std::vector<std::vector<std::uint8_t>> userFxCommon;
     std::vector<std::uint32_t> customModuleIds;
+    std::uint32_t customBufferCount = 1;
+    std::vector<std::uint32_t> customModuleBuffers;
+    std::vector<std::uint32_t> customPortBuffers;
 };
 
 struct Ngs2System {
