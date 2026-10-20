@@ -234,10 +234,15 @@ static void MixInputs(Ngs2Voice& voice, const std::vector<Ngs2Voice*>& voices, s
             const auto& port = source->ports[p];
             if (port.dest != &voice || port.volume == 0.0f) continue;
             RenderVoice(*source, voices, grain, systemRate);
-            if (!source->hasSamples) continue;
-            const auto& input = source->rack->customPortBuffers.empty() ? source->samples
-                : source->customBuffers[source->rack->customPortBuffers[p]];
-            MixPort(voice, *source, input, port, grain);
+            if (source->rack->customPortBuffers.empty()) {
+                if (!source->hasSamples) continue;
+                MixPort(voice, *source, source->samples, port, grain);
+            } else {
+                const auto bufferId = source->rack->customPortBuffers[p];
+                if (source->customBufferHasSamples.empty() || !source->customBufferHasSamples[bufferId]) continue;
+                const auto& input = bufferId == 0 ? source->samples : source->customBuffers[bufferId];
+                MixPort(voice, *source, input, port, grain);
+            }
             voice.hasSamples = true;
         }
     }

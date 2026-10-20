@@ -174,20 +174,24 @@ void Ngs2ApplyCustomParam(Ngs2Voice& voice, const Ngs2VoiceParamHeader& param) {
 }
 
 void Ngs2ProcessUserFx(Ngs2Voice& voice, std::uint32_t grain, std::uint32_t sampleRate) {
-    if (voice.userFx.empty() && voice.customUserFx.empty()) return;
+    if (voice.rack->customPortBuffers.empty() && voice.rack->customModuleIds.empty()) return;
     voice.customBuffers.resize(voice.rack->customBufferCount);
-    voice.customBuffers[0] = voice.samples;
+    voice.customBufferHasSamples.assign(voice.rack->customBufferCount, 0);
+    voice.customBufferHasSamples[0] = voice.hasSamples;
+    const std::size_t sampleCount = static_cast<std::size_t>(voice.channels) * grain;
     for (std::size_t b = 1; b < voice.customBuffers.size(); b++) {
-        voice.customBuffers[b].assign(static_cast<std::size_t>(voice.channels) * grain, 0.0f);
+        if (!voice.customBuffers[b].empty()) voice.customBuffers[b].assign(sampleCount, 0.0f);
     }
     std::vector<float*> channels(voice.channels);
     for (std::size_t m = 0; m < voice.rack->customModuleIds.size(); m++) {
-        auto& samples = voice.customBuffers[voice.rack->customModuleBuffers[m]];
-        for (std::uint32_t c = 0; c < voice.channels; c++) {
-            channels[c] = samples.data() + static_cast<std::size_t>(c) * grain;
+        const auto bufferId = voice.rack->customModuleBuffers[m];
+        auto& samples = bufferId == 0 ? voice.samples : voice.customBuffers[bufferId];
+        if (bufferId != 0 && samples.empty()) samples.assign(sampleCount, 0.0f);
+        for (std::uint32_t ch = 0; ch < voice.channels; ch++) {
+            channels[ch] = samples.data() + static_cast<std::size_t>(ch) * grain;
         }
         if (voice.rack->customModuleIds[m] == SCE_NGS2_CUSTOM_MODULE_ID_USER_FX2) {
-            if (!voice.hasSamples) continue;
+            if (!voice.customBufferHasSamples[bufferId]) continue;
             auto& fx = voice.userFx[m];
             const auto& module = voice.rack->userFx[m];
             if (module.process_handler == nullptr) continue;
@@ -196,7 +200,7 @@ void Ngs2ProcessUserFx(Ngs2Voice& voice, std::uint32_t grain, std::uint32_t samp
             const int result = module.process_handler(&context);
             if (result != SCE_NGS2_OK) throw std::runtime_error("NGS2: the UserFx2 process handler failed with " + std::to_string(result));
             fx.flags = 0;
-            voice.hasSamples = voice.hasSamples || std::any_of(samples.begin(), samples.end(), [](float sample) { return sample != 0.0f; });
+            voice.customBufferHasSamples[bufferId] = std::any_of(samples.begin(), samples.end(), [](float sample) { return sample != 0.0f; });
         } else if (voice.rack->customModuleIds[m] == SCE_NGS2_CUSTOM_MODULE_ID_USER_FX) {
             if (m < voice.customUserFx.size() && voice.customUserFx[m].handler != nullptr) {
                 auto& fx = voice.customUserFx[m];
@@ -205,11 +209,11 @@ void Ngs2ProcessUserFx(Ngs2Voice& voice, std::uint32_t grain, std::uint32_t samp
                 const int result = fx.handler(&context);
                 if (result != SCE_NGS2_OK) throw std::runtime_error("NGS2: the UserFx process handler failed with " + std::to_string(result));
                 fx.flags = 0;
-                voice.hasSamples = voice.hasSamples || std::any_of(samples.begin(), samples.end(), [](float sample) { return sample != 0.0f; });
+                voice.customBufferHasSamples[bufferId] = std::any_of(samples.begin(), samples.end(), [](float sample) { return sample != 0.0f; });
             }
         }
     }
-    voice.samples = voice.customBuffers[0];
+    voice.hasSamples = std::any_of(voice.customBufferHasSamples.begin(), voice.customBufferHasSamples.end(), [](std::uint8_t active) { return active != 0; });
 }
 
 void Ngs2ProcessLegacyUserFx(Ngs2Voice& voice, std::uint32_t grain, std::uint32_t sampleRate) {
