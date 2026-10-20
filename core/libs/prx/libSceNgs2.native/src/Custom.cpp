@@ -1,4 +1,5 @@
 #include <algorithm>
+#include <array>
 #include <cstddef>
 #include <cstdint>
 #include <cstring>
@@ -182,7 +183,7 @@ void Ngs2ProcessUserFx(Ngs2Voice& voice, std::uint32_t grain, std::uint32_t samp
     for (std::size_t b = 1; b < voice.customBuffers.size(); b++) {
         if (!voice.customBuffers[b].empty()) voice.customBuffers[b].assign(sampleCount, 0.0f);
     }
-    std::vector<float*> channels(voice.channels);
+    std::array<float*, NGS2_MAX_CHANNELS> channels{};
     for (std::size_t m = 0; m < voice.rack->customModuleIds.size(); m++) {
         const auto bufferId = voice.rack->customModuleBuffers[m];
         auto& samples = bufferId == 0 ? voice.samples : voice.customBuffers[bufferId];

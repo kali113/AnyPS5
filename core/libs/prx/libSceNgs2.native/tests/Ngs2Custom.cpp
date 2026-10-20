@@ -205,6 +205,15 @@ static void TestRackOptions() {
     option.custom_rack_option.num_buffers = 0;
     Require(CreateThrows<std::invalid_argument>(option));
     option = good;
+    option.custom_rack_option.num_buffers = 3;
+    option.custom_rack_option.module[0].source_buffer_id = 3;
+    option.custom_rack_option.module[0].dest_buffer_id = 3;
+    Require(CreateThrows<std::invalid_argument>(option));
+    option = good;
+    option.custom_rack_option.num_buffers = 3;
+    option.custom_rack_option.port[0].source_buffer_id = 3;
+    Require(CreateThrows<std::invalid_argument>(option));
+    option = good;
     option.custom_rack_option.module[0].module_id = 0x10;
     Require(CreateThrows<std::runtime_error>(option));
     option = good;
@@ -551,9 +560,18 @@ static void TestAuxiliaryPortIsolation() {
             Ngs2CustomVoiceUserFxParam{{}, ProcessLegacy, reinterpret_cast<std::uintptr_t>(&first), 0, 0});
     Control(custom, SCE_NGS2_CUSTOM_VOICE_PARAM_USER_FX | 1,
             Ngs2CustomVoiceUserFxParam{{}, ProcessLegacy, reinterpret_cast<std::uintptr_t>(&second), 0, 0});
-    const auto out = Render(system);
+    std::vector<std::int16_t> pcm(Grain * 2 * 4, 16384);
+    const auto sampler = Sampler(system, pcm);
+    Patch(sampler, custom);
+    Event(sampler, SCE_NGS2_VOICE_EVENT_PLAY);
+    auto out = Render(system);
     Require(first.calls == 1 && second.calls == 1);
     for (std::uint32_t i = 0; i < Grain; i++) Require(out[i * 2] == 0.625f && out[i * 2 + 1] == 0.375f);
+    first.val0 = 0.0f;
+    first.val1 = 0.0f;
+    out = Render(system);
+    Require(first.calls == 2 && second.calls == 2);
+    for (std::uint32_t i = 0; i < Grain; i++) Require(out[i * 2] == second.val0 && out[i * 2 + 1] == second.val1);
     Require(sceNgs2RackDestroy(rack, nullptr) == SCE_NGS2_OK);
     Require(sceNgs2SystemDestroy(system, nullptr) == SCE_NGS2_OK);
 }
