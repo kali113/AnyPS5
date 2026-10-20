@@ -1,0 +1,57 @@
+name: NGS2 experimental build and runtime validation
+on:
+  push:
+    branches: [validation/ngs2-runtime]
+permissions:
+  contents: read
+jobs:
+  ngs2-linux:
+    runs-on: ubuntu-latest
+    timeout-minutes: 50
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          submodules: true
+          fetch-depth: 0
+      - run: sudo apt-get update && sudo apt-get install -y --no-install-recommends ninja-build ccache libx11-dev libxext-dev libvulkan1 mesa-vulkan-drivers
+      - uses: hendrikmuhs/ccache-action@v1.2.24
+        with:
+          key: ngs2-runtime-linux
+      - run: python3 tools/check_conventions.py --base d50ec76da003f8fe5f0dcd6cd4002f920b534e11
+      - run: python3 tools/pr_overlap.py --branch feat/ngs2-custom-multibuffer-wip
+        continue-on-error: true
+      - run: cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DBUILD_TESTING=ON -DCMAKE_C_COMPILER=gcc -DCMAKE_CXX_COMPILER=g++ -DCMAKE_C_COMPILER_LAUNCHER=ccache -DCMAKE_CXX_COMPILER_LAUNCHER=ccache
+      - run: cmake --build build --parallel 3
+      - run: ctest --test-dir build --output-on-failure --parallel 3 --timeout 30 -R '^ngs2_'
+      - run: cmake --build build --target libs --parallel 3
+  ngs2-windows:
+    runs-on: windows-latest
+    timeout-minutes: 50
+    defaults:
+      run:
+        shell: bash
+    env:
+      WINLIBS_RELEASE: 15.2.0posix-14.0.0-ucrt-r7
+      WINLIBS_ZIP: winlibs-x86_64-posix-seh-gcc-15.2.0-mingw-w64ucrt-14.0.0-r7.zip
+      SSL_CERT_FILE: C:\Program Files\Git\mingw64\etc\ssl\certs\ca-bundle.crt
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          submodules: true
+      - id: toolchain
+        uses: actions/cache@v6
+        with:
+          path: C:\winlibs
+          key: ${{ env.WINLIBS_ZIP }}
+      - if: steps.toolchain.outputs.cache-hit != 'true'
+        run: |
+          curl -sSfL -o "$RUNNER_TEMP/winlibs.zip" "https://github.com/brechtsanders/winlibs_mingw/releases/download/$WINLIBS_RELEASE/$WINLIBS_ZIP"
+          7z x "$RUNNER_TEMP/winlibs.zip" -oC:/winlibs > /dev/null
+      - run: echo 'C:\winlibs\mingw64\bin' >> "$GITHUB_PATH"
+      - uses: hendrikmuhs/ccache-action@v1.2.24
+        with:
+          key: ngs2-runtime-windows
+      - run: cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DBUILD_TESTING=ON -DCMAKE_C_COMPILER=gcc -DCMAKE_CXX_COMPILER=g++ -DCMAKE_C_COMPILER_LAUNCHER=ccache -DCMAKE_CXX_COMPILER_LAUNCHER=ccache -DANYPS5_ENABLE_SPIRV_TOOLS=OFF
+      - run: cmake --build build --parallel 3
+      - run: ctest --test-dir build --output-on-failure --parallel 3 --timeout 30 -R '^ngs2_'
+      - run: cmake --build build --target libs --parallel 3
