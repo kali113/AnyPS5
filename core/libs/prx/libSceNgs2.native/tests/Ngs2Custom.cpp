@@ -198,7 +198,12 @@ static void TestRackOptions() {
 
     auto option = good;
     option.custom_rack_option.num_buffers = 2;
+    Require(sceNgs2RackQueryBufferSize(SCE_NGS2_RACK_ID_CUSTOM_SUBMIXER, &option.custom_rack_option.rack_option, &query) == SCE_NGS2_OK);
+    option.custom_rack_option.module[0].extra_buffer_id = 1;
     Require(CreateThrows<std::runtime_error>(option));
+    option = good;
+    option.custom_rack_option.num_buffers = 0;
+    Require(CreateThrows<std::invalid_argument>(option));
     option = good;
     option.custom_rack_option.module[0].module_id = 0x10;
     Require(CreateThrows<std::runtime_error>(option));
@@ -467,7 +472,34 @@ static void TestCustomLegacyUserFx() {
     Require(sceNgs2SystemDestroy(system, nullptr) == SCE_NGS2_OK);
 }
 
+static void TestAuxiliaryBufferUserFx() {
+    const auto system = CreateSystem();
+    const auto master = Mastering(system, 2);
+    const Ngs2CustomModuleOption header{sizeof(Ngs2CustomModuleOption)};
+    auto option = LegacyRackOption(&header);
+    option.custom_rack_option.num_buffers = 3;
+    option.custom_rack_option.module[0].source_buffer_id = 2;
+    option.custom_rack_option.module[0].dest_buffer_id = 2;
+    option.custom_rack_option.port[0].source_buffer_id = 2;
+    const auto rack = CustomRack(system, option);
+    const auto custom = Voice(rack);
+    Control(custom, SCE_NGS2_CUSTOM_SUBMIXER_VOICE_PARAM_SETUP, Ngs2CustomSubmixerVoiceSetupParam{{}, 2, 2, 0, 0});
+    Patch(custom, master);
+    Event(custom, SCE_NGS2_VOICE_EVENT_PLAY);
+    LegacyUserFxState state{};
+    Control(custom, SCE_NGS2_CUSTOM_VOICE_PARAM_USER_FX | 0,
+            Ngs2CustomVoiceUserFxParam{{}, ProcessLegacy, reinterpret_cast<std::uintptr_t>(&state), 0, 0});
+    const auto out = Render(system);
+    Require(state.calls == 1);
+    for (std::uint32_t i = 0; i < Grain; i++) {
+        Require(out[i * 2] == state.val0 && out[i * 2 + 1] == state.val1);
+    }
+    Require(sceNgs2RackDestroy(rack, nullptr) == SCE_NGS2_OK);
+    Require(sceNgs2SystemDestroy(system, nullptr) == SCE_NGS2_OK);
+}
+
 int main() {
+    TestAuxiliaryBufferUserFx();
     TestUserFxChain();
     TestRackOptions();
     TestCustomSampler();
