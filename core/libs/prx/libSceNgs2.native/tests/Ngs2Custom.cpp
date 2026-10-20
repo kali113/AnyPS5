@@ -198,7 +198,21 @@ static void TestRackOptions() {
 
     auto option = good;
     option.custom_rack_option.num_buffers = 2;
+    Require(sceNgs2RackQueryBufferSize(SCE_NGS2_RACK_ID_CUSTOM_SUBMIXER, &option.custom_rack_option.rack_option, &query) == SCE_NGS2_OK);
+    option.custom_rack_option.module[0].extra_buffer_id = 1;
     Require(CreateThrows<std::runtime_error>(option));
+    option = good;
+    option.custom_rack_option.num_buffers = 0;
+    Require(CreateThrows<std::invalid_argument>(option));
+    option = good;
+    option.custom_rack_option.num_buffers = 3;
+    option.custom_rack_option.module[0].source_buffer_id = 3;
+    option.custom_rack_option.module[0].dest_buffer_id = 3;
+    Require(CreateThrows<std::invalid_argument>(option));
+    option = good;
+    option.custom_rack_option.num_buffers = 3;
+    option.custom_rack_option.port[0].source_buffer_id = 3;
+    Require(CreateThrows<std::invalid_argument>(option));
     option = good;
     option.custom_rack_option.module[0].module_id = 0x10;
     Require(CreateThrows<std::runtime_error>(option));
@@ -467,7 +481,138 @@ static void TestCustomLegacyUserFx() {
     Require(sceNgs2SystemDestroy(system, nullptr) == SCE_NGS2_OK);
 }
 
+static void TestAuxiliaryBufferUserFx() {
+    const auto system = CreateSystem();
+    const auto master = Mastering(system, 2);
+    const Ngs2CustomModuleOption header{sizeof(Ngs2CustomModuleOption)};
+    auto option = LegacyRackOption(&header);
+    option.custom_rack_option.num_buffers = 3;
+    option.custom_rack_option.module[0].source_buffer_id = 2;
+    option.custom_rack_option.module[0].dest_buffer_id = 2;
+    option.custom_rack_option.port[0].source_buffer_id = 2;
+    const auto rack = CustomRack(system, option);
+    const auto custom = Voice(rack);
+    Control(custom, SCE_NGS2_CUSTOM_SUBMIXER_VOICE_PARAM_SETUP, Ngs2CustomSubmixerVoiceSetupParam{{}, 2, 2, 0, 0});
+    Patch(custom, master);
+    Event(custom, SCE_NGS2_VOICE_EVENT_PLAY);
+    LegacyUserFxState state{};
+    Control(custom, SCE_NGS2_CUSTOM_VOICE_PARAM_USER_FX | 0,
+            Ngs2CustomVoiceUserFxParam{{}, ProcessLegacy, reinterpret_cast<std::uintptr_t>(&state), 0, 0});
+    const auto out = Render(system);
+    Require(state.calls == 1);
+    for (std::uint32_t i = 0; i < Grain; i++) {
+        Require(out[i * 2] == state.val0 && out[i * 2 + 1] == state.val1);
+    }
+    Require(sceNgs2RackDestroy(rack, nullptr) == SCE_NGS2_OK);
+    Require(sceNgs2SystemDestroy(system, nullptr) == SCE_NGS2_OK);
+}
+
+static void TestZeroModuleRouting() {
+    const auto system = CreateSystem();
+    const auto master = Mastering(system, 2);
+    auto option = LegacyRackOption(nullptr);
+    option.custom_rack_option.num_modules = 0;
+    option.custom_rack_option.num_buffers = 2;
+    option.custom_rack_option.port[0].source_buffer_id = 0;
+    const auto rack = CustomRack(system, option);
+    const auto custom = Voice(rack);
+    Control(custom, SCE_NGS2_CUSTOM_SUBMIXER_VOICE_PARAM_SETUP, Ngs2CustomSubmixerVoiceSetupParam{{}, 2, 2, 0, 0});
+    Patch(custom, master);
+    Event(custom, SCE_NGS2_VOICE_EVENT_PLAY);
+    std::vector<std::int16_t> pcm(Grain * 2 * 2, 16384);
+    const auto sampler = Sampler(system, pcm);
+    Patch(sampler, custom);
+    Event(sampler, SCE_NGS2_VOICE_EVENT_PLAY);
+    const auto out = Render(system);
+    for (std::uint32_t i = 0; i < Grain; i++) Require(out[i * 2] == 0.5f && out[i * 2 + 1] == 0.5f);
+    Require(sceNgs2RackDestroy(rack, nullptr) == SCE_NGS2_OK);
+    Require(sceNgs2SystemDestroy(system, nullptr) == SCE_NGS2_OK);
+}
+
+static void TestAuxiliaryPortIsolation() {
+    const auto system = CreateSystem();
+    const auto master = Mastering(system, 2);
+    const Ngs2CustomModuleOption header{sizeof(Ngs2CustomModuleOption)};
+    auto option = LegacyRackOption(&header);
+    option.custom_rack_option.rack_option.max_ports = 2;
+    option.custom_rack_option.num_buffers = 3;
+    option.custom_rack_option.num_modules = 2;
+    option.custom_rack_option.module[0].source_buffer_id = 1;
+    option.custom_rack_option.module[0].dest_buffer_id = 1;
+    option.custom_rack_option.module[1] = option.custom_rack_option.module[0];
+    option.custom_rack_option.module[1].source_buffer_id = 2;
+    option.custom_rack_option.module[1].dest_buffer_id = 2;
+    option.custom_rack_option.port[0].source_buffer_id = 1;
+    option.custom_rack_option.port[1].source_buffer_id = 2;
+    const auto rack = CustomRack(system, option);
+    const auto custom = Voice(rack);
+    Control(custom, SCE_NGS2_CUSTOM_SUBMIXER_VOICE_PARAM_SETUP, Ngs2CustomSubmixerVoiceSetupParam{{}, 2, 2, 0, 0});
+    Patch(custom, master);
+    Control(custom, SCE_NGS2_VOICE_PARAM_PATCH, Ngs2VoicePatchParam{{}, 1, 0, master});
+    Event(custom, SCE_NGS2_VOICE_EVENT_PLAY);
+    LegacyUserFxState first{};
+    LegacyUserFxState second{};
+    first.val0 = 0.125f;
+    first.val1 = 0.25f;
+    second.val0 = 0.5f;
+    second.val1 = 0.125f;
+    Control(custom, SCE_NGS2_CUSTOM_VOICE_PARAM_USER_FX | 0,
+            Ngs2CustomVoiceUserFxParam{{}, ProcessLegacy, reinterpret_cast<std::uintptr_t>(&first), 0, 0});
+    Control(custom, SCE_NGS2_CUSTOM_VOICE_PARAM_USER_FX | 1,
+            Ngs2CustomVoiceUserFxParam{{}, ProcessLegacy, reinterpret_cast<std::uintptr_t>(&second), 0, 0});
+    std::vector<std::int16_t> pcm(Grain * 2 * 4, 16384);
+    const auto sampler = Sampler(system, pcm);
+    Patch(sampler, custom);
+    Event(sampler, SCE_NGS2_VOICE_EVENT_PLAY);
+    auto out = Render(system);
+    Require(first.calls == 1 && second.calls == 1);
+    for (std::uint32_t i = 0; i < Grain; i++) Require(out[i * 2] == 0.625f && out[i * 2 + 1] == 0.375f);
+    first.val0 = 0.0f;
+    first.val1 = 0.0f;
+    out = Render(system);
+    Require(first.calls == 2 && second.calls == 2);
+    for (std::uint32_t i = 0; i < Grain; i++) Require(out[i * 2] == second.val0 && out[i * 2 + 1] == second.val1);
+    Require(sceNgs2RackDestroy(rack, nullptr) == SCE_NGS2_OK);
+    Require(sceNgs2SystemDestroy(system, nullptr) == SCE_NGS2_OK);
+}
+
+static void TestCustomSilenceDisablesDownstreamFx() {
+    calls = {};
+    const auto system = CreateSystem();
+    const auto master = Mastering(system, 2);
+    const Ngs2CustomModuleOption header{sizeof(Ngs2CustomModuleOption)};
+    const auto fx2 = Module(Gain);
+    auto option = LegacyRackOption(&header);
+    option.custom_rack_option.num_modules = 2;
+    option.custom_rack_option.module[1].option = &fx2.custom_module_option;
+    option.custom_rack_option.module[1].module_id = SCE_NGS2_CUSTOM_MODULE_ID_USER_FX2;
+    option.custom_rack_option.module[1].state_size = 16;
+    const auto rack = CustomRack(system, option);
+    const auto custom = Voice(rack);
+    Control(custom, SCE_NGS2_CUSTOM_SUBMIXER_VOICE_PARAM_SETUP, Ngs2CustomSubmixerVoiceSetupParam{{}, 2, 2, 0, 0});
+    Patch(custom, master);
+    Event(custom, SCE_NGS2_VOICE_EVENT_PLAY);
+    LegacyUserFxState state{};
+    state.val0 = 0.0f;
+    state.val1 = 0.0f;
+    Control(custom, SCE_NGS2_CUSTOM_VOICE_PARAM_USER_FX | 0,
+            Ngs2CustomVoiceUserFxParam{{}, ProcessLegacy, reinterpret_cast<std::uintptr_t>(&state), 0, 0});
+    std::vector<std::int16_t> pcm(Grain * 2 * 2, 16384);
+    const auto sampler = Sampler(system, pcm);
+    Patch(sampler, custom);
+    Event(sampler, SCE_NGS2_VOICE_EVENT_PLAY);
+    const auto out = Render(system);
+    Require(state.calls == 1 && calls.processFlags.empty());
+    for (float sample : out) Require(sample == 0.0f);
+    Require(sceNgs2RackDestroy(rack, nullptr) == SCE_NGS2_OK);
+    Require(sceNgs2SystemDestroy(system, nullptr) == SCE_NGS2_OK);
+}
+
 int main() {
+    TestZeroModuleRouting();
+    TestAuxiliaryPortIsolation();
+    TestCustomSilenceDisablesDownstreamFx();
+    TestAuxiliaryBufferUserFx();
     TestUserFxChain();
     TestRackOptions();
     TestCustomSampler();
