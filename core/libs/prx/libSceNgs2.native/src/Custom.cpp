@@ -1,6 +1,7 @@
 #include <algorithm>
 #include <cmath>
 #include <cstddef>
+#include <cstdio>
 #include <cstdint>
 #include <cstring>
 #include <stdexcept>
@@ -123,6 +124,10 @@ static int CheckMasteringModules(const Ngs2CustomRackOption& option) {
 }
 
 int Ngs2CheckCustomRack(std::uint32_t rackId, const Ngs2CustomRackOption& option, std::uint32_t maxInputs) {
+    std::fprintf(stderr, "ngs2-rack 0x%x modules %u\n", rackId, option.num_modules);
+    for (std::uint32_t m = 0; m < option.num_modules && m < SCE_NGS2_CUSTOM_MAX_MODULES; m++) {
+        std::fprintf(stderr, "ngs2-rack 0x%x module 0x%x\n", rackId, option.module[m].module_id);
+    }
     if (option.num_buffers == 0 || option.num_buffers > SCE_NGS2_CUSTOM_MAX_BUFFERS || option.num_buffers < maxInputs) {
         return SCE_NGS2_ERROR_INVALID_NUM_BUFFERS;
     }
